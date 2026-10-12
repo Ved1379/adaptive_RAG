@@ -1,22 +1,23 @@
 
 from sentence_transformers import SentenceTransformer
-from injestion import extract_text, chunk_text
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
+
 
 def generate_embeddings(chunks):
     embeddings = model.encode(chunks)
     return embeddings
 
+
 if __name__ == "__main__":
-    text = extract_text("documents/sample.pdf")
+    from injestion import extract_pages, chunk_pages
 
-    chunks = chunk_text(text)
+    pages = extract_pages("documents/sample.pdf")
+    chunks = chunk_pages(pages)
 
-    embeddings = generate_embeddings(chunks)
+    texts = [chunk["text"] for chunk in chunks]
+    embeddings = generate_embeddings(texts)
 
-    print("Total chunks:", len(chunks))
+    print("Total chunks:", len(texts))
     print("Total embeddings:", len(embeddings))
     print("Embedding dimensions:", len(embeddings[0]))
-    print("\nFirst embedding:")
-    print(embeddings[0])

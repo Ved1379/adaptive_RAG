@@ -1,6 +1,7 @@
+
 import chromadb
 from embeddings import generate_embeddings
-from injestion import extract_text, chunk_text
+from injestion import extract_pages, chunk_pages
 
 client = chromadb.PersistentClient(path="./chroma_data")
 
@@ -8,17 +9,40 @@ collection = client.get_or_create_collection(
     name="college_documents"
 )
 
-text = extract_text("documents/sample.pdf")
+pdf_path = "documents/sample.pdf"
 
-chunks = chunk_text(text)
+pages = extract_pages(pdf_path)
+chunks = chunk_pages(pages)
 
-embeddings = generate_embeddings(chunks)
+texts = [chunk["text"] for chunk in chunks]
+embeddings = generate_embeddings(texts)
 
-collection.add(
-    ids=[f"chunk_{i}" for i in range(len(chunks))],
-    documents=chunks,
-    embeddings=embeddings.tolist()
+collection.upsert(
+    ids=[f"sample_pdf_chunk_{i}" for i in range(len(chunks))],
+    documents=texts,
+    embeddings=embeddings.tolist(),
+    metadatas=[
+        {
+            "filename": "sample.pdf",
+            "page_number": chunk["page_number"],
+            "chunk_index": i
+        }
+        for i, chunk in enumerate(chunks)
+    ]
 )
 
 print("Data stored in ChromaDB successfully!")
-print("Total chunks:", len(chunks))
+print("New chunks processed:", len(chunks))
+
+stored_data = collection.get(
+    include=["metadatas"]
+)
+
+print("Total chunks in collection:", len(stored_data["ids"]))
+print("\nStored metadata:")
+
+for chunk_id, metadata in zip(
+    stored_data["ids"],
+    stored_data["metadatas"]
+):
+    print(f"{chunk_id}: {metadata}")
