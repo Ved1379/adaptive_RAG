@@ -14,7 +14,9 @@ import {
   BarChart3,
   Shield,
   ShieldCheck,
-  ArrowLeftRight,
+  ShieldAlert,
+  LogOut,
+  LogIn,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -28,7 +30,7 @@ export default function Sidebar({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, role, isAdmin, isStudent, toggleRole } = useAuth();
+  const { user, role, isAdmin, isStudent, isAuthenticated, logout } = useAuth();
 
   const handleNewChatClick = () => {
     onNewChat();
@@ -46,6 +48,14 @@ export default function Sidebar({
     }
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+    if (window.innerWidth < 768) {
+      onClose();
+    }
+  };
+
   return (
     <>
       {/* Mobile backdrop overlay */}
@@ -56,8 +66,8 @@ export default function Sidebar({
 
       <aside
         style={{
-          width: '250px',
-          minWidth: '250px',
+          width: '260px',
+          minWidth: '260px',
           height: '100%',
           backgroundColor: '#0d121f',
           borderRight: '1px solid #1e293b',
@@ -104,9 +114,6 @@ export default function Sidebar({
                   fontWeight: 700,
                   color: '#f8fafc',
                   letterSpacing: '-0.01em',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
                 }}
               >
                 Adaptive RAG
@@ -114,21 +121,21 @@ export default function Sidebar({
               <div
                 style={{
                   fontSize: '0.7rem',
-                  color: '#94a3b8',
-                  fontWeight: 500,
+                  color: '#64748b',
+                  letterSpacing: '0.02em',
                 }}
               >
-                {isAdmin ? 'Admin Console' : 'College Assistant'}
+                {isAdmin ? 'Admin Console' : 'College Chatbot'}
               </div>
             </div>
           </div>
 
-          {/* Close button on mobile */}
           <button
             type="button"
             onClick={onClose}
             className="mobile-close-btn"
             style={{
+              display: 'none',
               background: 'none',
               border: 'none',
               color: '#94a3b8',
@@ -140,8 +147,8 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Action Button: + New Chat */}
-        <div style={{ padding: '12px 14px 6px 14px' }}>
+        {/* Action: Start New Chat */}
+        <div style={{ padding: '14px 12px 6px 12px' }}>
           <button
             type="button"
             onClick={handleNewChatClick}
@@ -154,20 +161,12 @@ export default function Sidebar({
               padding: '10px 14px',
               backgroundColor: isAdmin ? '#6d28d9' : '#1d4ed8',
               color: '#ffffff',
-              border: isAdmin
-                ? '1px solid rgba(139, 92, 246, 0.4)'
-                : '1px solid rgba(59, 130, 246, 0.4)',
+              border: 'none',
               borderRadius: '8px',
               fontSize: '0.85rem',
               fontWeight: 600,
               cursor: 'pointer',
               transition: 'background-color 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = isAdmin ? '#7c3aed' : '#2563eb';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = isAdmin ? '#6d28d9' : '#1d4ed8';
             }}
           >
             <Plus size={16} strokeWidth={2.5} />
@@ -175,7 +174,7 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Navigation Section - Role Based */}
+        {/* Navigation Section */}
         <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <div
             style={{
@@ -187,10 +186,10 @@ export default function Sidebar({
               padding: '6px 10px 4px 10px',
             }}
           >
-            {isAdmin ? 'Admin Navigation' : 'Navigation'}
+            {isAdmin ? 'Administration' : 'Portal Navigation'}
           </div>
 
-          {/* ADMIN ONLY: Dashboard */}
+          {/* ADMIN: Dashboard */}
           {isAdmin && (
             <NavLink
               to="/admin"
@@ -207,7 +206,6 @@ export default function Sidebar({
                 color: isActive ? '#f8fafc' : '#94a3b8',
                 backgroundColor: isActive ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
                 border: isActive ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid transparent',
-                transition: 'all 0.15s ease',
               })}
             >
               <LayoutDashboard size={16} />
@@ -215,7 +213,30 @@ export default function Sidebar({
             </NavLink>
           )}
 
-          {/* BOTH: Chats */}
+          {/* ADMIN: Approvals Queue */}
+          {isAdmin && (
+            <NavLink
+              to="/admin/approvals"
+              onClick={handleNavClick}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? '#f8fafc' : '#94a3b8',
+                backgroundColor: isActive ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                border: isActive ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid transparent',
+              })}
+            >
+              <Clock size={16} />
+              <span>Approval Queue</span>
+            </NavLink>
+          )}
+
+          {/* Chatbot */}
           <NavLink
             to="/"
             onClick={handleNavClick}
@@ -239,14 +260,13 @@ export default function Sidebar({
                   ? '1px solid rgba(139, 92, 246, 0.3)'
                   : '1px solid rgba(59, 130, 246, 0.3)'
                 : '1px solid transparent',
-              transition: 'all 0.15s ease',
             })}
           >
             <MessageSquare size={16} />
-            <span>Chats</span>
+            <span>Chatbot</span>
           </NavLink>
 
-          {/* BOTH: Documents */}
+          {/* Documents */}
           <NavLink
             to="/documents"
             onClick={handleNavClick}
@@ -269,38 +289,13 @@ export default function Sidebar({
                   ? '1px solid rgba(139, 92, 246, 0.3)'
                   : '1px solid rgba(59, 130, 246, 0.3)'
                 : '1px solid transparent',
-              transition: 'all 0.15s ease',
             })}
           >
             <FileText size={16} />
-            <span>Documents</span>
+            <span>{isAdmin ? 'Documents' : 'Knowledge Base'}</span>
           </NavLink>
 
-          {/* ADMIN ONLY: Users */}
-          {isAdmin && (
-            <NavLink
-              to="/admin/users"
-              onClick={handleNavClick}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                fontSize: '0.85rem',
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? '#f8fafc' : '#94a3b8',
-                backgroundColor: isActive ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                border: isActive ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid transparent',
-                transition: 'all 0.15s ease',
-              })}
-            >
-              <Users size={16} />
-              <span>Users</span>
-            </NavLink>
-          )}
-
-          {/* ADMIN ONLY: Analytics */}
+          {/* ADMIN: Analytics */}
           {isAdmin && (
             <NavLink
               to="/admin/analytics"
@@ -316,15 +311,60 @@ export default function Sidebar({
                 color: isActive ? '#f8fafc' : '#94a3b8',
                 backgroundColor: isActive ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
                 border: isActive ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid transparent',
-                transition: 'all 0.15s ease',
               })}
             >
               <BarChart3 size={16} />
-              <span>Analytics</span>
+              <span>Hallucination Analytics</span>
             </NavLink>
           )}
 
-          {/* BOTH: Settings */}
+          {/* ADMIN: Audit Logs */}
+          {isAdmin && (
+            <NavLink
+              to="/admin/audit-logs"
+              onClick={handleNavClick}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? '#f8fafc' : '#94a3b8',
+                backgroundColor: isActive ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                border: isActive ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid transparent',
+              })}
+            >
+              <ShieldAlert size={16} />
+              <span>Audit Trail</span>
+            </NavLink>
+          )}
+
+          {/* ADMIN: Users */}
+          {isAdmin && (
+            <NavLink
+              to="/admin/users"
+              onClick={handleNavClick}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? '#f8fafc' : '#94a3b8',
+                backgroundColor: isActive ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                border: isActive ? '1px solid rgba(139, 92, 246, 0.3)' : '1px solid transparent',
+              })}
+            >
+              <Users size={16} />
+              <span>User Accounts</span>
+            </NavLink>
+          )}
+
+          {/* Settings */}
           <NavLink
             to="/settings"
             onClick={handleNavClick}
@@ -337,17 +377,8 @@ export default function Sidebar({
               fontSize: '0.85rem',
               fontWeight: isActive ? 600 : 500,
               color: isActive ? '#f8fafc' : '#94a3b8',
-              backgroundColor: isActive
-                ? isAdmin
-                  ? 'rgba(139, 92, 246, 0.15)'
-                  : 'rgba(59, 130, 246, 0.15)'
-                : 'transparent',
-              border: isActive
-                ? isAdmin
-                  ? '1px solid rgba(139, 92, 246, 0.3)'
-                  : '1px solid rgba(59, 130, 246, 0.3)'
-                : '1px solid transparent',
-              transition: 'all 0.15s ease',
+              backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+              border: isActive ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
             })}
           >
             <Settings size={16} />
@@ -355,12 +386,13 @@ export default function Sidebar({
           </NavLink>
         </div>
 
-        {/* Chat History Section */}
+        {/* Conversations History List */}
         <div
           style={{
             flex: 1,
             overflowY: 'auto',
-            padding: '8px 10px',
+            padding: '10px 10px',
+            borderTop: '1px solid #1e293b',
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -372,128 +404,55 @@ export default function Sidebar({
               textTransform: 'uppercase',
               letterSpacing: '0.06em',
               color: '#64748b',
-              padding: '6px 10px 4px 10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              padding: '4px 8px 8px 8px',
             }}
           >
-            <span>Chat History</span>
-            <Clock size={12} />
+            Recent Chats
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '2px' }}>
-            {chatSessions && chatSessions.length > 0 ? (
-              chatSessions.map((session) => {
-                const isSelected = session.id === currentSessionId && location.pathname === '/';
-                return (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectSession(session.id);
-                      if (location.pathname !== '/') navigate('/');
-                      if (window.innerWidth < 768) onClose();
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 10px',
-                      borderRadius: '6px',
-                      fontSize: '0.8125rem',
-                      textAlign: 'left',
-                      color: isSelected ? '#f8fafc' : '#94a3b8',
-                      backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      width: '100%',
-                      transition: 'all 0.15s ease',
-                      overflow: 'hidden',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
-                        e.currentTarget.style.color = '#e2e8f0';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                        e.currentTarget.style.color = '#94a3b8';
-                      }
-                    }}
-                  >
-                    <MessageSquare size={14} style={{ flexShrink: 0, opacity: 0.7 }} />
-                    <span
-                      style={{
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        flex: 1,
-                      }}
-                    >
-                      {session.title || 'Untitled conversation'}
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div
-                style={{
-                  padding: '12px 10px',
-                  fontSize: '0.75rem',
-                  color: '#64748b',
-                  fontStyle: 'italic',
-                }}
-              >
-                No previous conversations yet.
-              </div>
-            )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {chatSessions.map((session) => {
+              const isSelected = session.id === currentSessionId;
+              return (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectSession(session.id);
+                    if (location.pathname !== '/') navigate('/');
+                    if (window.innerWidth < 768) onClose();
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '7px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    textAlign: 'left',
+                    color: isSelected ? '#f8fafc' : '#94a3b8',
+                    backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    overflow: 'hidden',
+                    whiteSpace: 'nowrap',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  <MessageSquare size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {session.title || 'Conversation'}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        </div>
-
-        {/* Development Role Switcher Pill */}
-        <div style={{ padding: '6px 12px', borderTop: '1px solid #1e293b', backgroundColor: '#090d16' }}>
-          <button
-            type="button"
-            onClick={toggleRole}
-            title="Switch active role between Student and Admin for presentation testing"
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 10px',
-              backgroundColor: 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid #1e293b',
-              borderRadius: '6px',
-              color: '#94a3b8',
-              fontSize: '0.725rem',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
-              e.currentTarget.style.color = '#f8fafc';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
-              e.currentTarget.style.color = '#94a3b8';
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <ArrowLeftRight size={12} />
-              <span>Dev Role: <strong style={{ color: isAdmin ? '#c4b5fd' : '#93c5fd' }}>{role}</strong></span>
-            </div>
-            <span style={{ fontSize: '0.675rem', opacity: 0.7 }}>Switch</span>
-          </button>
         </div>
 
         {/* Bottom User / Profile Section */}
         <div
           style={{
-            padding: '14px 16px',
+            padding: '12px 14px',
             borderTop: '1px solid #1e293b',
             backgroundColor: '#0a0e18',
             display: 'flex',
@@ -501,59 +460,104 @@ export default function Sidebar({
             justifyContent: 'space-between',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
+          {isAuthenticated ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    backgroundColor: isAdmin ? 'rgba(139, 92, 246, 0.2)' : '#1e293b',
+                    border: isAdmin
+                      ? '1px solid rgba(139, 92, 246, 0.4)'
+                      : '1px solid rgba(255, 255, 255, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isAdmin ? '#c4b5fd' : '#94a3b8',
+                    flexShrink: 0,
+                  }}
+                >
+                  {isAdmin ? <Shield size={16} /> : <User size={16} />}
+                </div>
+
+                <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      fontSize: '0.825rem',
+                      fontWeight: 600,
+                      color: '#f8fafc',
+                      lineHeight: '1.2',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {user?.name || 'User'}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.675rem',
+                      color: '#64748b',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {user?.email}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Sign out of account"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#f87171';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = '#94a3b8';
+                }}
+              >
+                <LogOut size={16} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
               style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                backgroundColor: isAdmin ? 'rgba(139, 92, 246, 0.2)' : '#1e293b',
-                border: isAdmin
-                  ? '1px solid rgba(139, 92, 246, 0.4)'
-                  : '1px solid rgba(255, 255, 255, 0.1)',
+                width: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: isAdmin ? '#c4b5fd' : '#94a3b8',
+                gap: '8px',
+                padding: '8px',
+                backgroundColor: '#1e293b',
+                color: '#f8fafc',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
               }}
             >
-              {isAdmin ? <Shield size={16} /> : <User size={16} />}
-            </div>
-
-            <div>
-              <div
-                style={{
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: '#f8fafc',
-                  lineHeight: '1.2',
-                }}
-              >
-                {user.name}
-              </div>
-              <div
-                style={{
-                  fontSize: '0.7rem',
-                  color: '#64748b',
-                }}
-              >
-                {user.department}
-              </div>
-            </div>
-          </div>
-
-          <span
-            style={{
-              fontSize: '0.65rem',
-              backgroundColor: isAdmin ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-              color: isAdmin ? '#c4b5fd' : '#60a5fa',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontWeight: 600,
-            }}
-          >
-            {role}
-          </span>
+              <LogIn size={15} />
+              <span>Sign In</span>
+            </button>
+          )}
         </div>
       </aside>
     </>

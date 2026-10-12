@@ -273,3 +273,35 @@ code, pre {
     pointer-events: auto;
   }
 }
+
+/* ==========================================================================
+   KaTeX Math Formula Rendering Styles
+   ========================================================================== */
+.katex {
+  font-size: 1.05em;
+  text-rendering: auto;
+}
+
+.katex-display {
+  margin: 0.75em 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+  max-width: 100%;
+}
+
+.katex-display::-webkit-scrollbar {
+  height: 4px;
+}
+
+.katex-display::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+}
+
+.katex-error {
+  color: #f87171 !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+}
+

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
 import Chat from './pages/Chat';
@@ -7,17 +7,24 @@ import Documents from './pages/Documents';
 import DocumentDetails from './pages/DocumentDetails';
 import Settings from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
+import PendingApprovals from './pages/PendingApprovals';
+import AuditLogs from './pages/AuditLogs';
 import Users from './pages/Users';
 import Analytics from './pages/Analytics';
 import AccessDenied from './pages/AccessDenied';
+import Login from './pages/Login';
+import Register from './pages/Register';
 
 const STORAGE_KEY = 'adaptive_rag_sessions_v1';
 
 export default function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Load chat sessions from localStorage or initialize with a default one
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+
+  // Load chat sessions from localStorage
   const [chatSessions, setChatSessions] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -46,7 +53,6 @@ export default function App() {
     return chatSessions[0]?.id || `session-${Date.now()}`;
   });
 
-  // Sync sessions to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(chatSessions));
@@ -104,6 +110,16 @@ export default function App() {
     navigate('/');
   };
 
+  if (isAuthPage) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <div className="app-layout">
       {/* Sidebar Navigation */}
@@ -159,8 +175,16 @@ export default function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute adminOnly={true}>
                 <AdminDashboard onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/approvals"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <PendingApprovals onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
               </ProtectedRoute>
             }
           />
@@ -169,18 +193,26 @@ export default function App() {
             element={<Navigate to="/documents" replace />}
           />
           <Route
-            path="/admin/users"
+            path="/admin/analytics"
             element={
-              <ProtectedRoute>
-                <Users onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+              <ProtectedRoute adminOnly={true}>
+                <Analytics onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/admin/analytics"
+            path="/admin/audit-logs"
             element={
-              <ProtectedRoute>
-                <Analytics onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+              <ProtectedRoute adminOnly={true}>
+                <AuditLogs onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <Users onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
               </ProtectedRoute>
             }
           />

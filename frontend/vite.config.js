@@ -9,19 +9,31 @@ export default defineConfig({
     host: true,
     proxy: {
       '/chat': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:9000',
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:9000',
         changeOrigin: true,
       },
       '/documents': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:9000',
+        changeOrigin: true,
+      },
+      '/auth': {
+        target: 'http://127.0.0.1:9000',
+        changeOrigin: true,
+      },
+      '/admin': {
+        target: 'http://127.0.0.1:9000',
+        changeOrigin: true,
+      },
+      '/users': {
+        target: 'http://127.0.0.1:9000',
         changeOrigin: true,
       },
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:9000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },

@@ -6,3 +6,5 @@ __pycache__/
 chroma_data/
 documents/
 frontend/node_modules/
+*.db
+uploads/

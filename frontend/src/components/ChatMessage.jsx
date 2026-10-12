@@ -1,8 +1,97 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { User, Sparkles, RefreshCw, AlertCircle, Compass, GraduationCap } from 'lucide-react';
 import SourcePanel from './SourcePanel';
+
+/**
+ * Error boundary component to prevent LaTeX/Markdown rendering errors
+ * from crashing the chat interface.
+ */
+class MathErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn('Math rendering caught an error, displaying safe fallback:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+          {this.props.fallbackText}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Preprocesses markdown text to ensure LaTeX formulas render properly:
+ * - Converts display math \[ ... \] to $$ ... $$
+ * - Converts inline math \( ... \) to $ ... $
+ * - Preserves existing $ ... $ and $$ ... $$
+ * - Safely handles streamed or incrementally generated text (auto-closing open delimiters)
+ * - Guarantees fenced code blocks (```...```) and inline code snippets (`...`) are never modified
+ */
+export function preprocessLaTeX(content) {
+  if (!content || typeof content !== 'string') return '';
+
+  // Split content by code blocks so we never touch code
+  const codeBlockRegex = /(```[\s\S]*?```|`[^`\n]*?`)/g;
+  const parts = content.split(codeBlockRegex);
+
+  for (let i = 0; i < parts.length; i++) {
+    // Non-code blocks are at even indices
+    if (i % 2 === 0) {
+      let text = parts[i];
+
+      // 1. Replace display math \[ ... \] with $$ ... $$
+      text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `\n$$\n${math.trim()}\n$$\n`);
+
+      // 2. Replace inline math \( ... \) with $ ... $
+      text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math.trim()}$`);
+
+      // 3. Handle streamed / incrementally generated incomplete delimiters at the end
+      // Check for unclosed \[
+      if (/\\\[([^\n\]]*)$/.test(text)) {
+        text = text.replace(/\\\[([^\n\]]*)$/, (_, math) => `\n$$\n${math.trim()}\n$$\n`);
+      }
+
+      // Check for unclosed \(
+      if (/\\\(([^)\n]*)$/.test(text)) {
+        text = text.replace(/\\\(([^)\n]*)$/, (_, math) => `$${math.trim()}$`);
+      }
+
+      // Check for unclosed $$ (odd count of $$)
+      const displayDollarMatches = text.match(/\$\$/g);
+      if (displayDollarMatches && displayDollarMatches.length % 2 !== 0) {
+        text = text + '\n$$\n';
+      } else {
+        // Check for unclosed single $ (odd count of unescaped single $)
+        const singleDollarMatches = text.replace(/\\\$|\$\$/g, '').match(/\$/g);
+        if (singleDollarMatches && singleDollarMatches.length % 2 !== 0) {
+          text = text + '$';
+        }
+      }
+
+      parts[i] = text;
+    }
+  }
+
+  return parts.join('');
+}
+
 
 export default function ChatMessage({ message }) {
   const isUser = message.role === 'user';
@@ -180,64 +269,101 @@ export default function ChatMessage({ message }) {
             ) : (
               /* Standard Markdown AI / User Content */
               <div className="prose-chat" style={{ wordBreak: 'break-word' }}>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    p: ({ node, ...props }) => (
-                      <p style={{ margin: '0 0 10px 0', lineHeight: 1.6 }} {...props} />
-                    ),
-                    ul: ({ node, ...props }) => (
-                      <ul
-                        style={{ margin: '6px 0 10px 20px', paddingLeft: 0, listStyleType: 'disc' }}
-                        {...props}
-                      />
-                    ),
-                    ol: ({ node, ...props }) => (
-                      <ol
-                        style={{
-                          margin: '6px 0 10px 20px',
-                          paddingLeft: 0,
-                          listStyleType: 'decimal',
-                        }}
-                        {...props}
-                      />
-                    ),
-                    li: ({ node, ...props }) => <li style={{ marginBottom: '4px' }} {...props} />,
-                    strong: ({ node, ...props }) => (
-                      <strong style={{ fontWeight: 600, color: '#ffffff' }} {...props} />
-                    ),
-                    code: ({ node, inline, ...props }) =>
-                      inline ? (
-                        <code
+                <MathErrorBoundary fallbackText={message.content}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+                    components={{
+                      p: ({ node, ...props }) => (
+                        <p style={{ margin: '0 0 10px 0', lineHeight: 1.6 }} {...props} />
+                      ),
+                      ul: ({ node, ...props }) => (
+                        <ul
+                          style={{ margin: '6px 0 10px 20px', paddingLeft: 0, listStyleType: 'disc' }}
+                          {...props}
+                        />
+                      ),
+                      ol: ({ node, ...props }) => (
+                        <ol
                           style={{
-                            backgroundColor: 'rgba(0, 0, 0, 0.35)',
-                            padding: '2px 5px',
-                            borderRadius: '4px',
-                            fontSize: '0.825em',
-                            color: '#e2e8f0',
-                            fontFamily: 'monospace',
+                            margin: '6px 0 10px 20px',
+                            paddingLeft: 0,
+                            listStyleType: 'decimal',
                           }}
                           {...props}
                         />
-                      ) : (
-                        <pre
-                          style={{
-                            backgroundColor: '#0a0e17',
-                            padding: '10px 14px',
-                            borderRadius: '6px',
-                            overflowX: 'auto',
-                            margin: '8px 0',
-                            border: '1px solid rgba(255, 255, 255, 0.08)',
-                            fontSize: '0.825em',
-                          }}
-                        >
-                          <code {...props} />
-                        </pre>
                       ),
-                  }}
-                >
-                  {message.content}
-                </ReactMarkdown>
+                      li: ({ node, ...props }) => <li style={{ marginBottom: '4px' }} {...props} />,
+                      strong: ({ node, ...props }) => (
+                        <strong style={{ fontWeight: 600, color: '#ffffff' }} {...props} />
+                      ),
+                      code: ({ node, inline, ...props }) =>
+                        inline ? (
+                          <code
+                            style={{
+                              backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                              padding: '2px 5px',
+                              borderRadius: '4px',
+                              fontSize: '0.825em',
+                              color: '#e2e8f0',
+                              fontFamily: 'monospace',
+                            }}
+                            {...props}
+                          />
+                        ) : (
+                          <pre
+                            style={{
+                              backgroundColor: '#0a0e17',
+                              padding: '10px 14px',
+                              borderRadius: '6px',
+                              overflowX: 'auto',
+                              margin: '8px 0',
+                              border: '1px solid rgba(255, 255, 255, 0.08)',
+                              fontSize: '0.825em',
+                            }}
+                          >
+                            <code {...props} />
+                          </pre>
+                        ),
+                      table: ({ node, ...props }) => (
+                        <div style={{ overflowX: 'auto', margin: '12px 0' }}>
+                          <table
+                            style={{
+                              borderCollapse: 'collapse',
+                              width: '100%',
+                              fontSize: '0.875rem',
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                            }}
+                            {...props}
+                          />
+                        </div>
+                      ),
+                      th: ({ node, ...props }) => (
+                        <th
+                          style={{
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            padding: '6px 12px',
+                            backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                            fontWeight: 600,
+                            textAlign: 'left',
+                          }}
+                          {...props}
+                        />
+                      ),
+                      td: ({ node, ...props }) => (
+                        <td
+                          style={{
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            padding: '6px 12px',
+                          }}
+                          {...props}
+                        />
+                      ),
+                    }}
+                  >
+                    {preprocessLaTeX(message.content)}
+                  </ReactMarkdown>
+                </MathErrorBoundary>
               </div>
             )}
 

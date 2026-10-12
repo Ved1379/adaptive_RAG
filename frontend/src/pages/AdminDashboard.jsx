@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -12,47 +12,97 @@ import {
   ShieldCheck,
   RefreshCw,
   Menu,
+  AlertTriangle,
+  XCircle,
+  Cpu,
+  Layers,
+  ShieldAlert,
+  Zap
 } from 'lucide-react';
+import { getAnalytics } from '../services/api';
 import UploadModal from '../components/UploadModal';
 
 export default function AdminDashboard({ onToggleSidebar }) {
   const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
-  // Mock dashboard metric values for presentation & engineering demonstration
-  const stats = [
+  const fetchStats = async () => {
+    setIsLoading(true);
+    const res = await getAnalytics();
+    if (res.success && res.data) {
+      setData(res.data);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const overview = data?.overview || {
+    total_users: 0,
+    total_submissions: 0,
+    pending_requests: 0,
+    approved_documents: 0,
+    rejected_submissions: 0,
+    failed_ingestion_jobs: 0,
+    active_knowledge_base_documents: 0,
+    total_indexed_chunks: 0,
+    total_chatbot_queries: 0,
+    successful_responses: 0,
+    flagged_responses: 0,
+    average_latency_ms: 0,
+    average_regeneration_attempts: 0,
+  };
+
+  const primaryCards = [
     {
-      title: 'Total Documents',
-      value: '12',
-      change: '5 Active Handbooks',
-      icon: FileText,
-      color: '#3b82f6',
-      bg: 'rgba(59, 130, 246, 0.1)',
-    },
-    {
-      title: 'Indexed Documents',
-      value: '10',
-      change: '100% ChromaDB Grounded',
+      title: 'Active Documents',
+      value: overview.approved_documents,
+      subtitle: `${overview.total_indexed_chunks} indexed ChromaDB chunks`,
       icon: CheckCircle2,
       color: '#10b981',
       bg: 'rgba(16, 185, 129, 0.1)',
+      link: '/documents',
     },
     {
-      title: 'Processing Documents',
-      value: '2',
-      change: 'Chunking & Embedding',
+      title: 'Pending Approvals',
+      value: overview.pending_requests,
+      subtitle: `${overview.total_submissions} total submissions`,
       icon: Clock,
       color: '#f59e0b',
       bg: 'rgba(245, 158, 11, 0.1)',
+      link: '/admin/approvals',
     },
     {
-      title: 'Total Users',
-      value: '245',
-      change: 'Students & Faculty',
-      icon: Users,
+      title: 'Failed Ingestions',
+      value: overview.failed_ingestion_jobs,
+      subtitle: 'Jobs requiring admin retry',
+      icon: AlertTriangle,
+      color: '#ef4444',
+      bg: 'rgba(239, 68, 68, 0.1)',
+      link: '/admin/approvals',
+    },
+    {
+      title: 'Total Queries',
+      value: overview.total_chatbot_queries,
+      subtitle: `${overview.flagged_responses} flagged by AI evaluator`,
+      icon: Zap,
       color: '#8b5cf6',
       bg: 'rgba(139, 92, 246, 0.1)',
+      link: '/admin/analytics',
     },
+  ];
+
+  const secondaryMetrics = [
+    { label: 'Registered Users', val: overview.total_users, icon: Users, color: '#38bdf8' },
+    { label: 'Rejected Submissions', val: overview.rejected_submissions, icon: XCircle, color: '#f87171' },
+    { label: 'Successful Answers', val: overview.successful_responses, icon: ShieldCheck, color: '#34d399' },
+    { label: 'Avg Latency', val: `${overview.average_latency_ms} ms`, icon: Clock, color: '#a78bfa' },
+    { label: 'Avg Regenerations', val: overview.average_regeneration_attempts, icon: RefreshCw, color: '#fbbf24' },
+    { label: 'Abstained Cases', val: overview.abstained_count || 0, icon: AlertTriangle, color: '#cbd5e1' },
   ];
 
   return (
@@ -101,17 +151,48 @@ export default function AdminDashboard({ onToggleSidebar }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <LayoutDashboard size={18} style={{ color: '#3b82f6' }} />
             <h1 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
-              Admin Dashboard
+              Administration & Governance Console
             </h1>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={fetchStats}
+            disabled={isLoading}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              backgroundColor: '#111726',
+              border: '1px solid #1e293b',
+              borderRadius: '6px',
+              color: '#94a3b8',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+            }}
+          >
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
           <button
             type="button"
             onClick={() => setIsUploadOpen(true)}
-            className="btn btn-primary"
-            style={{ fontSize: '0.8125rem', padding: '6px 12px' }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              backgroundColor: '#2563eb',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#ffffff',
+              fontSize: '0.825rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
           >
             <Upload size={14} />
             <span>Upload Document</span>
@@ -120,207 +201,219 @@ export default function AdminDashboard({ onToggleSidebar }) {
       </header>
 
       {/* Main Content Area */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '24px',
-        }}
-      >
-        <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Welcome Banner */}
           <div
             style={{
-              backgroundColor: '#111726',
+              backgroundColor: '#0d121f',
               border: '1px solid #1e293b',
               borderRadius: '12px',
               padding: '24px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '16px',
+              background: 'linear-gradient(135deg, rgba(13, 18, 31, 0.9) 0%, rgba(30, 41, 59, 0.4) 100%)',
             }}
           >
             <div>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '3px 8px',
-                  backgroundColor: 'rgba(139, 92, 246, 0.12)',
-                  border: '1px solid rgba(139, 92, 246, 0.3)',
-                  borderRadius: '4px',
-                  fontSize: '0.725rem',
-                  color: '#c4b5fd',
-                  fontWeight: 600,
-                  marginBottom: '8px',
-                }}
-              >
-                ADMIN ACCESS
-              </div>
-              <h2
-                style={{
-                  fontSize: '1.35rem',
-                  fontWeight: 700,
-                  color: '#f8fafc',
-                  marginBottom: '6px',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                Institutional Document & System Overview
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f8fafc', margin: '0 0 6px' }}>
+                Adaptive RAG Governance & Oversight
               </h2>
-              <p style={{ fontSize: '0.875rem', color: '#94a3b8', margin: 0 }}>
-                Manage college regulations, oversee student query traffic, and audit AI response verification.
+              <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: 0, maxWidth: '650px' }}>
+                All document approvals, vector database indexing, AI response evaluations, and bounded regenerations are governed server-side and recorded persistently.
               </p>
             </div>
+            {overview.pending_requests > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate('/admin/approvals')}
+                style={{
+                  padding: '10px 18px',
+                  backgroundColor: '#f59e0b',
+                  color: '#090d16',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span>Review {overview.pending_requests} Pending</span>
+                <ArrowRight size={16} />
+              </button>
+            )}
           </div>
 
-          {/* 4 Stat Cards */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-              gap: '16px',
-            }}
-          >
-            {stats.map((item, idx) => {
-              const Icon = item.icon;
+          {/* Primary Cards Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+            {primaryCards.map((c, idx) => {
+              const Icon = c.icon;
               return (
                 <div
                   key={idx}
+                  onClick={() => navigate(c.link)}
                   style={{
-                    backgroundColor: '#111726',
+                    backgroundColor: '#0d121f',
                     border: '1px solid #1e293b',
-                    borderRadius: '10px',
+                    borderRadius: '12px',
                     padding: '20px',
                     display: 'flex',
                     flexDirection: 'column',
-                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    transition: 'transform 0.15s ease, border-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = c.color;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#1e293b';
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '0.8125rem', color: '#94a3b8', fontWeight: 500 }}>
-                      {item.title}
-                    </span>
+                    <span style={{ fontSize: '0.825rem', fontWeight: 500, color: '#94a3b8' }}>{c.title}</span>
                     <div
                       style={{
-                        width: '34px',
-                        height: '34px',
+                        width: '36px',
+                        height: '36px',
                         borderRadius: '8px',
-                        backgroundColor: item.bg,
-                        color: item.color,
+                        backgroundColor: c.bg,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        color: c.color,
                       }}
                     >
                       <Icon size={18} />
                     </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f8fafc', lineHeight: 1.2 }}>
-                      {item.value}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
-                      {item.change}
-                    </div>
+                  <div style={{ fontSize: '1.85rem', fontWeight: 700, color: '#f8fafc', marginBottom: '4px' }}>
+                    {isLoading ? '—' : c.value}
                   </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{c.subtitle}</div>
                 </div>
               );
             })}
           </div>
 
-          {/* Quick Management Actions Grid */}
+          {/* Secondary Real Metric Counters */}
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: '16px',
+              backgroundColor: '#0d121f',
+              border: '1px solid #1e293b',
+              borderRadius: '12px',
+              padding: '20px',
             }}
           >
-            {/* Action 1: Documents Management */}
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc', margin: '0 0 16px' }}>
+              System Health & Operational Metrics (SQLite Live)
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+              {secondaryMetrics.map((m, idx) => {
+                const Icon = m.icon;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: '12px 14px',
+                      backgroundColor: '#111726',
+                      border: '1px solid #1e293b',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ color: m.color }}>
+                      <Icon size={20} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.725rem', color: '#94a3b8' }}>{m.label}</div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#f8fafc' }}>
+                        {isLoading ? '—' : m.val}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick Navigation Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
             <div
+              onClick={() => navigate('/admin/approvals')}
               style={{
-                backgroundColor: '#111726',
-                border: '1px solid #1e293b',
-                borderRadius: '10px',
                 padding: '20px',
+                backgroundColor: '#0d121f',
+                border: '1px solid #1e293b',
+                borderRadius: '12px',
                 cursor: 'pointer',
-                transition: 'border-color 0.15s ease',
               }}
-              onClick={() => navigate('/documents')}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1e293b')}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FileText size={18} style={{ color: '#3b82f6' }} />
-                  <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
-                    Manage Documents
-                  </h3>
-                </div>
-                <ArrowRight size={16} style={{ color: '#64748b' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', color: '#f59e0b' }}>
+                <Clock size={20} />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>
+                  Document Approval Queue
+                </h4>
               </div>
-              <p style={{ fontSize: '0.8125rem', color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>
-                Upload new handbooks, replace outdated ordinances, or delete removed regulations with vector un-indexing.
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 14px' }}>
+                Review pending submissions, inspect extracted text, approve or provide rejection feedback.
               </p>
+              <span style={{ fontSize: '0.775rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                Open Approval Queue <ArrowRight size={13} />
+              </span>
             </div>
 
-            {/* Action 2: User Access & RBAC */}
             <div
-              style={{
-                backgroundColor: '#111726',
-                border: '1px solid #1e293b',
-                borderRadius: '10px',
-                padding: '20px',
-                cursor: 'pointer',
-                transition: 'border-color 0.15s ease',
-              }}
-              onClick={() => navigate('/admin/users')}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.4)')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1e293b')}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Users size={18} style={{ color: '#8b5cf6' }} />
-                  <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
-                    User Roles (RBAC)
-                  </h3>
-                </div>
-                <ArrowRight size={16} style={{ color: '#64748b' }} />
-              </div>
-              <p style={{ fontSize: '0.8125rem', color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>
-                View registered students and faculty administrators. Audit role-based access permissions.
-              </p>
-            </div>
-
-            {/* Action 3: Analytics & Hallucination Metrics */}
-            <div
-              style={{
-                backgroundColor: '#111726',
-                border: '1px solid #1e293b',
-                borderRadius: '10px',
-                padding: '20px',
-                cursor: 'pointer',
-                transition: 'border-color 0.15s ease',
-              }}
               onClick={() => navigate('/admin/analytics')}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1e293b')}
+              style={{
+                padding: '20px',
+                backgroundColor: '#0d121f',
+                border: '1px solid #1e293b',
+                borderRadius: '12px',
+                cursor: 'pointer',
+              }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <BarChart3 size={18} style={{ color: '#10b981' }} />
-                  <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
-                    Adaptive RAG Analytics
-                  </h3>
-                </div>
-                <ArrowRight size={16} style={{ color: '#64748b' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', color: '#10b981' }}>
+                <BarChart3 size={20} />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>
+                  Hallucination Analytics
+                </h4>
               </div>
-              <p style={{ fontSize: '0.8125rem', color: '#94a3b8', margin: 0, lineHeight: 1.5 }}>
-                Examine verification pass rates across the 5 evaluation criteria and adaptive regeneration cycles.
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 14px' }}>
+                Examine faithfulness, groundedness, relevance, initial vs final scores, and bounded regeneration gains.
               </p>
+              <span style={{ fontSize: '0.775rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                View Research Analytics <ArrowRight size={13} />
+              </span>
+            </div>
+
+            <div
+              onClick={() => navigate('/admin/audit-logs')}
+              style={{
+                padding: '20px',
+                backgroundColor: '#0d121f',
+                border: '1px solid #1e293b',
+                borderRadius: '12px',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', color: '#8b5cf6' }}>
+                <ShieldAlert size={20} />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>
+                  Audit & Security Logs
+                </h4>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0 0 14px' }}>
+                View immutable chronological audit trail of document approvals, rejections, and deletions.
+              </p>
+              <span style={{ fontSize: '0.775rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                Review Audit Trail <ArrowRight size={13} />
+              </span>
             </div>
           </div>
         </div>
@@ -329,7 +422,7 @@ export default function AdminDashboard({ onToggleSidebar }) {
       <UploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
-        onUploaded={() => {}}
+        onUploaded={fetchStats}
       />
     </div>
   );

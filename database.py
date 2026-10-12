@@ -1,61 +1,44 @@
 import os
-import uuid
-import psycopg
+from pathlib import Path
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from models import Base
 
 load_dotenv()
 
+BASE_DIR = Path(__file__).resolve().parent
+SQLITE_DB_PATH = BASE_DIR / "adaptive_rag.db"
 
-def get_connection():
-    return psycopg.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
+# Default to SQLite for seamless prototype & local persistence without needing a Postgres server
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH}"
 
+# Configure engine
+connect_args = {}
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
 
-def save_document(filename, chunks):
-    conn = get_connection()
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    echo=False
+)
 
-    document_id = uuid.uuid4()
-
-    with conn.cursor() as cursor:
-
-        cursor.execute(
-            """
-            INSERT INTO documents (id, filename)
-            VALUES (%s, %s)
-            """,
-            (document_id, filename)
-        )
-
-        for index, chunk in enumerate(chunks):
-
-            chunk_id = uuid.uuid4()
-
-            cursor.execute(
-                """
-                INSERT INTO document_chunks
-                (id, document_id, chunk_index, content)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (chunk_id, document_id, index, chunk)
-            )
-
-    conn.commit()
-    conn.close()
-
-    print("Document and chunks saved successfully!")
-    print("Document ID:", document_id)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-if __name__ == "__main__":
-    test_chunks = [
-        "This is the first test chunk.",
-        "This is the second test chunk.",
-        "This is the third test chunk."
-    ]
+def init_db():
+    """Create all tables in the database if they don't already exist."""
+    Base.metadata.create_all(bind=engine)
+    print("Database tables initialized successfully at:", DATABASE_URL)
 
-    save_document("test.pdf", test_chunks)
+
+def get_db():
+    """FastAPI dependency for yielding database sessions."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

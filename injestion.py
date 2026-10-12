@@ -1,30 +1,39 @@
-
 from pypdf import PdfReader
 
 
 def extract_pages(pdf_path):
-    reader = PdfReader(pdf_path)
-    pages = []
+    """Safely extract text from PDF pages."""
+    try:
+        reader = PdfReader(pdf_path)
+        pages = []
 
-    for page_number, page in enumerate(reader.pages, start=1):
-        page_text = page.extract_text()
+        for page_number, page in enumerate(reader.pages, start=1):
+            try:
+                page_text = page.extract_text()
+                if page_text and page_text.strip():
+                    pages.append({
+                        "page_number": page_number,
+                        "text": page_text.strip()
+                    })
+            except Exception as page_err:
+                print(f"[PDF Extraction Warning] Page {page_number} error: {page_err}")
 
-        if page_text:
-            pages.append({
-                "page_number": page_number,
-                "text": page_text
-            })
-
-    return pages
+        return pages
+    except Exception as e:
+        print(f"[PDF Read Error] Could not read {pdf_path}: {e}")
+        return []
 
 
 def chunk_pages(pages, chunk_size=500, overlap=100):
+    """Split extracted pages into overlapping chunks."""
     chunks = []
 
     for page in pages:
         words = page["text"].split()
+        if not words:
+            continue
+            
         start = 0
-
         while start < len(words):
             end = start + chunk_size
             chunk = " ".join(words[start:end])
@@ -34,7 +43,9 @@ def chunk_pages(pages, chunk_size=500, overlap=100):
                 "page_number": page["page_number"]
             })
 
-            start += chunk_size - overlap
+            if end >= len(words):
+                break
+            start += max(1, chunk_size - overlap)
 
     return chunks
 

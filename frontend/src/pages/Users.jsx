@@ -101,7 +101,7 @@ export default function Users({ onToggleSidebar }) {
             fontWeight: 500,
           }}
         >
-          Frontend RBAC Preparation
+          {users.length} Registered Accounts
         </span>
       </header>
 

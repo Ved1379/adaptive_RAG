@@ -38,22 +38,19 @@ export default function UploadModal({ isOpen, onClose, onUploaded }) {
 
     setIsSubmitting(false);
     if (result.success) {
-      setSuccess('Document uploaded successfully and queued for chunking & indexing.');
+      setSuccess('Document submitted successfully. Awaiting administrator review.');
       setTimeout(() => {
-        onUploaded && onUploaded({
+        onUploaded && onUploaded(result.data?.document || {
           id: `doc-${Date.now()}`,
           filename: file.name,
           department,
           academicYear,
-          uploadedDate: new Date().toISOString().split('T')[0],
-          status: 'Processing',
-          chunkCount: 0,
-          fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+          status: 'PENDING',
         });
         setFile(null);
         setSuccess(null);
         onClose();
-      }, 1200);
+      }, 1000);
     } else {
       setError(result.error || 'Failed to upload document.');
     }

@@ -15,28 +15,31 @@ import {
   RefreshCw,
   Eye,
   Lock,
+  XCircle,
+  AlertTriangle,
+  FolderOpen,
 } from 'lucide-react';
-import { getDocuments, deleteDocument } from '../services/api';
+import { getDocuments, getMySubmissions, deleteDocument } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import UploadModal from '../components/UploadModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
-import ReplaceDocumentModal from '../components/ReplaceDocumentModal';
 
 export default function Documents({ onToggleSidebar }) {
   const navigate = useNavigate();
-  const { isAdmin, isStudent } = useAuth();
+  const { isAdmin, isStudent, user } = useAuth();
 
+  const [activeTab, setActiveTab] = useState('knowledge_base'); // 'knowledge_base' or 'my_submissions'
   const [documents, setDocuments] = useState([]);
+  const [mySubmissions, setMySubmissions] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Modals state (Admin only)
+  // Modals state
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [replaceTargetDoc, setReplaceTargetDoc] = useState(null);
   const [deleteTargetDoc, setDeleteTargetDoc] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchDocuments = async (query = '') => {
+  const fetchActiveDocuments = async (query = '') => {
     setIsLoading(true);
     const result = await getDocuments(query);
     if (result.success && result.data) {
@@ -45,18 +48,29 @@ export default function Documents({ onToggleSidebar }) {
     setIsLoading(false);
   };
 
-  useEffect(() => {
-    fetchDocuments(searchQuery);
-  }, [searchQuery]);
-
-  const handleDocumentUploaded = (newDoc) => {
-    setDocuments((prev) => [newDoc, ...prev]);
+  const fetchUserSubmissions = async () => {
+    setIsLoading(true);
+    const result = await getMySubmissions();
+    if (result.success && result.data) {
+      setMySubmissions(result.data);
+    }
+    setIsLoading(false);
   };
 
-  const handleDocumentReplaced = (updatedDoc) => {
-    setDocuments((prev) =>
-      prev.map((d) => (d.id === updatedDoc.id ? updatedDoc : d))
-    );
+  useEffect(() => {
+    if (activeTab === 'knowledge_base') {
+      fetchActiveDocuments(searchQuery);
+    } else {
+      fetchUserSubmissions();
+    }
+  }, [activeTab, searchQuery]);
+
+  const handleDocumentUploaded = (newDoc) => {
+    if (activeTab === 'my_submissions') {
+      setMySubmissions((prev) => [newDoc, ...prev]);
+    } else {
+      fetchActiveDocuments(searchQuery);
+    }
   };
 
   const handleDeleteConfirm = async (docId) => {
@@ -66,11 +80,14 @@ export default function Documents({ onToggleSidebar }) {
     if (res.success) {
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
       setDeleteTargetDoc(null);
+    } else {
+      alert(res.error || 'Failed to delete document.');
     }
   };
 
   const getStatusBadge = (status) => {
     switch (status) {
+      case 'APPROVED':
       case 'Indexed':
         return (
           <span
@@ -88,10 +105,10 @@ export default function Documents({ onToggleSidebar }) {
             }}
           >
             <CheckCircle2 size={12} />
-            <span>Indexed</span>
+            <span>Active in RAG</span>
           </span>
         );
-      case 'Processing':
+      case 'PENDING':
         return (
           <span
             style={{
@@ -103,15 +120,54 @@ export default function Documents({ onToggleSidebar }) {
               fontSize: '0.725rem',
               fontWeight: 500,
               backgroundColor: 'rgba(245, 158, 11, 0.12)',
-              color: '#fbbf24',
+              color: '#f59e0b',
               border: '1px solid rgba(245, 158, 11, 0.25)',
             }}
           >
             <Clock size={12} />
-            <span>Processing</span>
+            <span>Pending Review</span>
           </span>
         );
-      case 'Available':
+      case 'REJECTED':
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 8px',
+              borderRadius: '9999px',
+              fontSize: '0.725rem',
+              fontWeight: 500,
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+              color: '#f87171',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+            }}
+          >
+            <XCircle size={12} />
+            <span>Rejected</span>
+          </span>
+        );
+      case 'INGESTION_FAILED':
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 8px',
+              borderRadius: '9999px',
+              fontSize: '0.725rem',
+              fontWeight: 500,
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              color: '#ef4444',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+            }}
+          >
+            <AlertTriangle size={12} />
+            <span>Ingestion Failed</span>
+          </span>
+        );
       default:
         return (
           <span
@@ -123,17 +179,19 @@ export default function Documents({ onToggleSidebar }) {
               borderRadius: '9999px',
               fontSize: '0.725rem',
               fontWeight: 500,
-              backgroundColor: 'rgba(56, 189, 248, 0.12)',
-              color: '#38bdf8',
-              border: '1px solid rgba(56, 189, 248, 0.25)',
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              color: '#60a5fa',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
             }}
           >
-            <Layers size={12} />
-            <span>Available</span>
+            <RefreshCw size={12} className="animate-spin" />
+            <span>Processing</span>
           </span>
         );
     }
   };
+
+  const displayedList = activeTab === 'knowledge_base' ? documents : mySubmissions;
 
   return (
     <div
@@ -146,7 +204,7 @@ export default function Documents({ onToggleSidebar }) {
         overflow: 'hidden',
       }}
     >
-      {/* Top Bar */}
+      {/* Top Header */}
       <header
         style={{
           height: '60px',
@@ -178,390 +236,266 @@ export default function Documents({ onToggleSidebar }) {
           >
             <Menu size={20} />
           </button>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={18} style={{ color: '#38bdf8' }} />
             <h1 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc', margin: 0 }}>
-              College Documents
+              Knowledge Base Documents
             </h1>
           </div>
         </div>
 
-        {/* ADMIN ONLY: Upload Document button */}
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setIsUploadOpen(true)}
-            className="btn btn-primary"
-            style={{ fontSize: '0.8125rem', padding: '6px 14px' }}
-          >
-            <Upload size={14} />
-            <span>Upload Document</span>
-          </button>
-        )}
-
-        {isStudent && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '0.725rem',
-              color: '#94a3b8',
-              padding: '4px 10px',
-              backgroundColor: 'rgba(255, 255, 255, 0.03)',
-              borderRadius: '6px',
-              border: '1px solid #1e293b',
-            }}
-          >
-            <Lock size={12} style={{ color: '#64748b' }} />
-            <span>Read-Only Access</span>
-          </div>
-        )}
+        {/* Upload / Submit Document Button */}
+        <button
+          type="button"
+          onClick={() => setIsUploadOpen(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 14px',
+            backgroundColor: '#2563eb',
+            border: 'none',
+            borderRadius: '6px',
+            color: '#ffffff',
+            fontSize: '0.825rem',
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          <Upload size={14} />
+          <span>{isAdmin ? 'Upload Document' : 'Submit for Review'}</span>
+        </button>
       </header>
 
       {/* Main Content Area */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '24px',
-        }}
-      >
-        <div style={{ maxWidth: '1050px', margin: '0 auto' }}>
-          {/* Page Intro */}
-          <div style={{ marginBottom: '24px' }}>
-            <h2
-              style={{
-                fontSize: '1.35rem',
-                fontWeight: 700,
-                color: '#f8fafc',
-                letterSpacing: '-0.02em',
-                marginBottom: '4px',
-              }}
-            >
-              College Documents
-            </h2>
-            <p style={{ fontSize: '0.875rem', color: '#94a3b8', margin: 0 }}>
-              {isStudent
-                ? 'Official documents used by the AI assistant.'
-                : 'Documents used by the AI assistant to answer college-related questions with administrative repository controls.'}
-            </p>
-          </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          {/* Tabs for Students */}
+          {!isAdmin && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              <button
+                type="button"
+                onClick={() => setActiveTab('knowledge_base')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.825rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  border: activeTab === 'knowledge_base' ? '1px solid #3b82f6' : '1px solid #1e293b',
+                  backgroundColor: activeTab === 'knowledge_base' ? 'rgba(59, 130, 246, 0.15)' : '#0d121f',
+                  color: activeTab === 'knowledge_base' ? '#60a5fa' : '#94a3b8',
+                }}
+              >
+                Active Knowledge Base
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('my_submissions')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.825rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  border: activeTab === 'my_submissions' ? '1px solid #3b82f6' : '1px solid #1e293b',
+                  backgroundColor: activeTab === 'my_submissions' ? 'rgba(59, 130, 246, 0.15)' : '#0d121f',
+                  color: activeTab === 'my_submissions' ? '#60a5fa' : '#94a3b8',
+                }}
+              >
+                My Submissions & Status
+              </button>
+            </div>
+          )}
 
           {/* Search bar */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              marginBottom: '20px',
-            }}
-          >
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                backgroundColor: '#111726',
-                border: '1px solid #1e293b',
-                borderRadius: '8px',
-                padding: '8px 14px',
-              }}
-            >
-              <Search size={16} style={{ color: '#64748b' }} />
-              <input
-                type="text"
-                placeholder="Search documents by name, department, or content..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+          {activeTab === 'knowledge_base' && (
+            <div style={{ marginBottom: '20px', position: 'relative' }}>
+              <Search
+                size={16}
                 style={{
-                  flex: 1,
-                  background: 'none',
-                  border: 'none',
-                  outline: 'none',
-                  color: '#f8fafc',
-                  fontSize: '0.875rem',
+                  position: 'absolute',
+                  left: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#64748b',
                 }}
               />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#64748b',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Clear
-                </button>
-              )}
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search documents by filename or department..."
+                style={{
+                  width: '100%',
+                  padding: '10px 14px 10px 38px',
+                  backgroundColor: '#0d121f',
+                  border: '1px solid #1e293b',
+                  borderRadius: '8px',
+                  color: '#f8fafc',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
-          </div>
+          )}
 
           {/* Documents Table */}
           <div
             style={{
-              backgroundColor: '#111726',
+              backgroundColor: '#0d121f',
               border: '1px solid #1e293b',
-              borderRadius: '10px',
+              borderRadius: '12px',
               overflow: 'hidden',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
             }}
           >
-            {/* Table Header */}
-            <div
-              className="table-header-row"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: isAdmin
-                  ? 'minmax(220px, 2fr) minmax(170px, 1.2fr) 110px 110px 100px 140px'
-                  : 'minmax(250px, 2fr) minmax(180px, 1.3fr) 120px 120px 100px 60px',
-                padding: '12px 18px',
-                backgroundColor: '#0d121f',
-                borderBottom: '1px solid #1e293b',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                color: '#64748b',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              <div>Document Name</div>
-              <div>Department</div>
-              <div>Academic Year</div>
-              <div>Last Updated</div>
-              <div>Status</div>
-              <div style={{ textAlign: 'right' }}>{isAdmin ? 'Actions' : 'View'}</div>
-            </div>
-
-            {/* Table Rows */}
-            {isLoading ? (
-              <div style={{ padding: '36px', textAlign: 'center', color: '#64748b', fontSize: '0.875rem' }}>
-                Loading verified documents...
-              </div>
-            ) : documents.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: '#64748b' }}>
-                <FileText size={32} style={{ margin: '0 auto 10px auto', opacity: 0.4 }} />
-                <div style={{ fontSize: '0.925rem', color: '#e2e8f0', fontWeight: 500 }}>
-                  No documents found
-                </div>
-                <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>
-                  Try a different search query.
-                </div>
-              </div>
-            ) : (
-              documents.map((doc, idx) => (
-                <div
-                  key={doc.id || idx}
-                  className="table-item-row"
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: isAdmin
-                      ? 'minmax(220px, 2fr) minmax(170px, 1.2fr) 110px 110px 100px 140px'
-                      : 'minmax(250px, 2fr) minmax(180px, 1.3fr) 120px 120px 100px 60px',
-                    padding: '14px 18px',
-                    borderBottom: idx === documents.length - 1 ? 'none' : '1px solid rgba(255, 255, 255, 0.04)',
-                    alignItems: 'center',
-                    transition: 'background-color 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#161f33';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
-                  {/* Name */}
-                  <div
-                    style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, cursor: 'pointer' }}
-                    onClick={() => navigate(`/documents/${doc.id}`)}
-                  >
-                    <div
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #1e293b', backgroundColor: '#111726', color: '#94a3b8' }}>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Document</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Department</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Date</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600 }}>Chunks / Status</th>
+                  <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayedList.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                      {isLoading
+                        ? 'Loading documents...'
+                        : activeTab === 'my_submissions'
+                        ? 'You have not submitted any documents for review yet.'
+                        : 'No documents found matching your search.'}
+                    </td>
+                  </tr>
+                ) : (
+                  displayedList.map((doc) => (
+                    <tr
+                      key={doc.id}
                       style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '6px',
-                        backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                        color: '#3b82f6',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                        color: '#cbd5e1',
                       }}
                     >
-                      <FileText size={16} />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                          color: '#f8fafc',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {doc.filename}
-                      </div>
-                      <div style={{ fontSize: '0.725rem', color: '#64748b' }}>
-                        {doc.chunkCount ? `${doc.chunkCount} chunks • ${doc.fileSize || 'PDF'}` : 'PDF Document'}
-                      </div>
-                    </div>
-                  </div>
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '6px',
+                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#60a5fa',
+                            }}
+                          >
+                            <FileText size={16} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#f8fafc' }}>{doc.filename}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                              {doc.page_count} pages • {(doc.file_size / 1024).toFixed(0)} KB
+                            </div>
+                          </div>
+                        </div>
+                      </td>
 
-                  {/* Department */}
-                  <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {doc.department}
-                  </div>
+                      <td style={{ padding: '14px 16px', color: '#94a3b8' }}>{doc.department}</td>
 
-                  {/* Academic Year */}
-                  <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-                    {doc.academicYear || '2024-25'}
-                  </div>
+                      <td style={{ padding: '14px 16px', color: '#64748b', fontSize: '0.8rem' }}>
+                        {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '—'}
+                      </td>
 
-                  {/* Last Updated */}
-                  <div style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>
-                    {doc.lastUpdated || doc.uploadedDate}
-                  </div>
+                      <td style={{ padding: '14px 16px' }}>
+                        <div>{getStatusBadge(doc.status)}</div>
+                        {doc.status === 'APPROVED' && (
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                            {doc.chunk_count} ChromaDB chunks
+                          </div>
+                        )}
+                        {doc.rejection_reason && (
+                          <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '4px' }}>
+                            Reason: {doc.rejection_reason}
+                          </div>
+                        )}
+                      </td>
 
-                  {/* Status */}
-                  <div>{getStatusBadge(doc.status)}</div>
+                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                          {doc.status === 'APPROVED' && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/documents/${doc.id}`)}
+                              style={{
+                                padding: '6px 10px',
+                                backgroundColor: '#111726',
+                                border: '1px solid #1e293b',
+                                borderRadius: '6px',
+                                color: '#38bdf8',
+                                fontSize: '0.785rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <Eye size={13} />
+                              <span>View Chunks</span>
+                            </button>
+                          )}
 
-                  {/* Actions Area */}
-                  <div style={{ textAlign: 'right' }}>
-                    {isStudent ? (
-                      /* STUDENT: Read-only View Action */
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/documents/${doc.id}`)}
-                        title="View document metadata"
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#3b82f6',
-                          cursor: 'pointer',
-                          padding: '4px',
-                        }}
-                      >
-                        <ExternalLink size={14} />
-                      </button>
-                    ) : (
-                      /* ADMIN: View, Replace, Delete Actions */
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/documents/${doc.id}`)}
-                          title="View document details"
-                          style={{
-                            padding: '4px 6px',
-                            backgroundColor: 'rgba(255, 255, 255, 0.04)',
-                            border: '1px solid #1e293b',
-                            borderRadius: '4px',
-                            color: '#cbd5e1',
-                            fontSize: '0.725rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <Eye size={12} />
-                          <span>View</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setReplaceTargetDoc(doc)}
-                          title="Replace this document"
-                          style={{
-                            padding: '4px 6px',
-                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                            border: '1px solid rgba(139, 92, 246, 0.25)',
-                            borderRadius: '4px',
-                            color: '#c4b5fd',
-                            fontSize: '0.725rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <RefreshCw size={12} />
-                          <span>Replace</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTargetDoc(doc)}
-                          title="Delete this document"
-                          style={{
-                            padding: '4px 6px',
-                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                            border: '1px solid rgba(239, 68, 68, 0.25)',
-                            borderRadius: '4px',
-                            color: '#f87171',
-                            fontSize: '0.725rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTargetDoc(doc)}
+                              style={{
+                                padding: '6px 10px',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                borderRadius: '6px',
+                                color: '#f87171',
+                                fontSize: '0.785rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <Trash2 size={13} />
+                              <span>Delete</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
-      {/* Admin Modals */}
-      {isAdmin && (
-        <>
-          <UploadModal
-            isOpen={isUploadOpen}
-            onClose={() => setIsUploadOpen(false)}
-            onUploaded={handleDocumentUploaded}
-          />
+      {/* Upload/Submit Modal */}
+      <UploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onUploaded={handleDocumentUploaded}
+      />
 
-          <ReplaceDocumentModal
-            isOpen={!!replaceTargetDoc}
-            doc={replaceTargetDoc}
-            onClose={() => setReplaceTargetDoc(null)}
-            onReplaced={handleDocumentReplaced}
-          />
-
-          <DeleteConfirmModal
-            isOpen={!!deleteTargetDoc}
-            doc={deleteTargetDoc}
-            onClose={() => setDeleteTargetDoc(null)}
-            onConfirm={handleDeleteConfirm}
-            isDeleting={isDeleting}
-          />
-        </>
-      )}
-
-      <style>{`
-        @media (max-width: 820px) {
-          .table-header-row {
-            display: none !important;
-          }
-          .table-item-row {
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 8px !important;
-            padding: 16px !important;
-          }
-        }
-      `}</style>
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={Boolean(deleteTargetDoc)}
+        onClose={() => setDeleteTargetDoc(null)}
+        onConfirm={() => deleteTargetDoc && handleDeleteConfirm(deleteTargetDoc.id)}
+        isDeleting={isDeleting}
+        documentName={deleteTargetDoc?.filename || ''}
+      />
     </div>
   );
 }
