@@ -5,17 +5,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 
-from embeddings import model
 from evaluator import evaluate_answer
-from rag import is_eval_passed, ask_question
-import chromadb
+from rag import is_eval_passed, ask_question, retrieve_chunks
 
 load_dotenv()
-
-# Initialize ChromaDB client
-CHROMA_PATH = Path(__file__).resolve().parent / "chroma_data"
-client = chromadb.PersistentClient(path=str(CHROMA_PATH))
-collection = client.get_or_create_collection(name="college_documents")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -93,9 +86,10 @@ def run_baseline_rag(question: str):
     Retrieves context and generates without evaluator critique feedback loop.
     """
     start = time.time()
-    question_embedding = model.encode(question).tolist()
-    raw = collection.query(query_embeddings=[question_embedding], n_results=4)
-    chunks = raw["documents"][0] if raw and raw.get("documents") else []
+    # Keep the single-shot generation baseline, but share the production
+    # approval-filtered retrieval path so benchmark prompts cannot include
+    # pending, rejected, deleted, or orphaned document chunks.
+    chunks, _sources = retrieve_chunks(question)
     context = "\n\n".join(chunks)
 
     prompt = f"""You are a helpful college assistant. Answer the question based on the context.

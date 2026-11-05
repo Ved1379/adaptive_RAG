@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -38,14 +38,19 @@ export default function Documents({ onToggleSidebar }) {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [deleteTargetDoc, setDeleteTargetDoc] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const documentFetchSequence = useRef(0);
 
   const fetchActiveDocuments = async (query = '') => {
+    const requestSequence = ++documentFetchSequence.current;
     setIsLoading(true);
     const result = await getDocuments(query);
-    if (result.success && result.data) {
-      setDocuments(result.data);
+    if (requestSequence === documentFetchSequence.current) {
+      if (result.success && result.data) {
+        setDocuments(result.data);
+      }
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const fetchUserSubmissions = async () => {
@@ -75,13 +80,20 @@ export default function Documents({ onToggleSidebar }) {
 
   const handleDeleteConfirm = async (docId) => {
     setIsDeleting(true);
-    const res = await deleteDocument(docId);
-    setIsDeleting(false);
-    if (res.success) {
+    setDeleteError('');
+    try {
+      const res = await deleteDocument(docId);
+      if (!res.success) {
+        setDeleteError(res.error || 'Failed to delete document.');
+        return;
+      }
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      await fetchActiveDocuments(searchQuery);
       setDeleteTargetDoc(null);
-    } else {
-      alert(res.error || 'Failed to delete document.');
+    } catch (error) {
+      setDeleteError(error.message || 'Failed to delete document.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -491,10 +503,16 @@ export default function Documents({ onToggleSidebar }) {
       {/* Delete Confirmation Modal */}
       <DeleteConfirmModal
         isOpen={Boolean(deleteTargetDoc)}
-        onClose={() => setDeleteTargetDoc(null)}
+        doc={deleteTargetDoc}
+        onClose={() => {
+          if (!isDeleting) {
+            setDeleteError('');
+            setDeleteTargetDoc(null);
+          }
+        }}
         onConfirm={() => deleteTargetDoc && handleDeleteConfirm(deleteTargetDoc.id)}
         isDeleting={isDeleting}
-        documentName={deleteTargetDoc?.filename || ''}
+        error={deleteError}
       />
     </div>
   );

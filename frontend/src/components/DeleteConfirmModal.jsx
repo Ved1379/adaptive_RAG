@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Trash2, X } from 'lucide-react';
 
-export default function DeleteConfirmModal({ isOpen, doc, onClose, onConfirm, isDeleting }) {
+export default function DeleteConfirmModal({ isOpen, doc, onClose, onConfirm, isDeleting, error }) {
   if (!isOpen || !doc) return null;
 
   return (
@@ -94,8 +94,13 @@ export default function DeleteConfirmModal({ isOpen, doc, onClose, onConfirm, is
             </div>
           </div>
           <p style={{ fontSize: '0.785rem', color: '#94a3b8', margin: 0 }}>
-            Note: This action will permanently delete all associated ChromaDB vector chunks and metadata once connected to FastAPI.
+            This permanently removes the uploaded file, database record, and any indexed ChromaDB chunks.
           </p>
+          {error && (
+            <p role="alert" style={{ color: '#fca5a5', fontSize: '0.825rem', lineHeight: '1.45', margin: '12px 0 0' }}>
+              {error}
+            </p>
+          )}
         </div>
 
         <div

@@ -68,7 +68,7 @@ This major research project implements an **Adaptive AI Hallucination Detection 
 - **Vector Database**: ChromaDB (persistent vector collection).
 - **Embeddings**: SentenceTransformers (`all-MiniLM-L6-v2`, 384 dimensions).
 - **LLM & Evaluation**: Google Gemini API (`gemini-3.5-flash-lite` configurable).
-- **Document Processing**: `pypdf` page extraction and chunking.
+- **Document Processing**: `pypdf` extraction and chunking, with local Tesseract OCR fallback for scanned PDF pages.
 
 ---
 
@@ -146,6 +146,60 @@ To validate the hallucination reduction claims, an automated benchmark was execu
 - Python 3.10+ (Tested on Python 3.14 / 3.11)
 - Node.js 18+ and npm
 - Valid Google Gemini API Key
+
+### Local OCR setup (Windows, Linux, macOS)
+
+PDF text extraction and OCR use separate components:
+
+- The Python packages `PyMuPDF` and `pytesseract` are installed with `pip install -r requirements.txt`.
+- The Tesseract OCR engine is a separate system executable. The OCR fallback invokes it locally; uploaded PDFs are not sent to an OCR service.
+- English language data (`eng`) must be installed with Tesseract. Other languages can be installed separately and selected by passing `ocr_language` to `extract_pages`.
+
+The repository setup scripts check for Tesseract and verify both `tesseract --version` and the `eng` entry in `tesseract --list-langs`, whether the engine was already installed or has just been installed. If Tesseract is missing, they ask before using a package manager:
+
+```powershell
+# Windows PowerShell
+.\scripts\setup_ocr_windows.ps1
+```
+
+```bash
+# macOS
+bash scripts/setup_ocr_macos.sh
+
+# Debian or Ubuntu Linux
+bash scripts/setup_ocr_linux.sh
+```
+
+On Windows, the script offers `winget` with the UB Mannheim Tesseract package. If `eng` is missing, it explains how to rerun the installer with English selected or add `eng.traineddata`. If `winget` is unavailable, install the Windows build linked from the [Tesseract installation guide](https://tesseract-ocr.github.io/tessdoc/Installation.html), include English language data, and add the install directory to `PATH`. The installer may request administrator approval for a system-wide installation. The script does not elevate itself or install without confirmation.
+
+On macOS, the script offers `brew install tesseract` after confirmation. If `eng` is missing, it offers `brew install tesseract-lang` after a separate confirmation. Homebrew normally installs for the current user, though initial Homebrew setup may require administrator approval. The script will not install Homebrew automatically.
+
+On Debian or Ubuntu, the script offers `sudo apt-get update` followed by installation of `tesseract-ocr` and `tesseract-ocr-eng`. If the engine exists but `eng` is missing, it asks separately before installing `tesseract-ocr-eng`. `sudo` may request an administrator password. On other Linux distributions the script prints package-manager examples; install Tesseract and the English traineddata using your distribution's documented packages.
+
+Verify the engine and language data:
+
+```bash
+tesseract --version
+tesseract --list-langs
+```
+
+Verify that this project can configure pytesseract to use the detected engine:
+
+```bash
+python -c "import pytesseract; from injestion import configure_tesseract; configure_tesseract(pytesseract); print(pytesseract.get_tesseract_version())"
+```
+
+Tesseract is detected from `TESSERACT_CMD`, `PATH`, and common Windows, Homebrew, and Linux install locations. Set `TESSERACT_CMD` when the executable is in a custom location:
+
+```powershell
+$env:TESSERACT_CMD = 'C:\Tools\Tesseract-OCR\tesseract.exe'
+```
+
+```bash
+export TESSERACT_CMD="$(command -v tesseract)"
+```
+
+If Tesseract or the requested language data is unavailable, normal text-based PDF extraction continues to work. In mixed PDFs, readable text pages can still be extracted while scanned pages skipped because OCR is unavailable will not be searchable. If a PDF has no readable text pages, ingestion returns an actionable OCR setup or language-data error and does not mark the document approved.
 
 ### Step 1: Clone and Configure Environment
 

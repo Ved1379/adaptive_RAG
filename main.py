@@ -701,21 +701,43 @@ def admin_delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    # Delete chunks from ChromaDB
-    deleted_chunks = delete_document_from_chroma(doc.id)
+    # Delete ChromaDB chunks first and verify cleanup before touching the file
+    # or database record. delete_document_from_chroma raises on partial failure.
+    try:
+        deleted_chunks = delete_document_from_chroma(doc.id)
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ChromaDB cleanup could not be confirmed. The document record and uploaded file were left in place; retry after resolving the vector-store issue."
+        ) from err
 
-    # Delete physical file if exists in uploads
-    if doc.file_path and "uploads" in doc.file_path:
+    # Restrict physical deletion to the project's upload directory. Treat an
+    # already-missing file as removed, but never silently swallow unlink errors.
+    if doc.file_path:
+        upload_root = UPLOAD_DIR.resolve()
+        file_path = Path(doc.file_path)
+        if not file_path.is_absolute():
+            file_path = Path(__file__).resolve().parent / file_path
+        file_path = file_path.resolve()
         try:
-            Path(doc.file_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+            file_path.relative_to(upload_root)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="The stored file path is outside the upload directory; the document record was not deleted."
+            ) from err
+
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception as err:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="The uploaded file could not be removed. The document record was kept; ChromaDB chunks may already have been removed."
+                ) from err
 
     filename = doc.filename
     db.delete(doc)
-    db.commit()
-
-    # Audit log
     audit = AuditLog(
         user_id=current_user.id,
         user_email=current_user.email,
@@ -725,7 +747,15 @@ def admin_delete_document(
         details=f"Admin deleted '{filename}' and removed {deleted_chunks} chunks from ChromaDB."
     )
     db.add(audit)
-    db.commit()
+    try:
+        # Delete the DB row and persist its audit event atomically.
+        db.commit()
+    except Exception as err:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The database could not finalize document deletion. The record was not confirmed deleted; its file or chunks may already have been removed. Retry after resolving the database issue."
+        ) from err
 
     return {
         "message": f"Document '{filename}' and {deleted_chunks} indexed chunks removed successfully.",

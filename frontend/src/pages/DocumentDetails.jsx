@@ -33,6 +33,7 @@ export default function DocumentDetails({ onToggleSidebar, onAskDocument }) {
   const [isReplaceOpen, setIsReplaceOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -60,10 +61,18 @@ export default function DocumentDetails({ onToggleSidebar, onAskDocument }) {
 
   const handleDelete = async (docId) => {
     setIsDeleting(true);
-    const res = await deleteDocument(docId);
-    setIsDeleting(false);
-    if (res.success) {
-      navigate('/documents');
+    setDeleteError('');
+    try {
+      const res = await deleteDocument(docId);
+      if (res.success) {
+        navigate('/documents');
+      } else {
+        setDeleteError(res.error || 'Failed to delete document.');
+      }
+    } catch (error) {
+      setDeleteError(error.message || 'Failed to delete document.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -488,9 +497,15 @@ export default function DocumentDetails({ onToggleSidebar, onAskDocument }) {
           <DeleteConfirmModal
             isOpen={isDeleteOpen}
             doc={doc}
-            onClose={() => setIsDeleteOpen(false)}
+            onClose={() => {
+              if (!isDeleting) {
+                setDeleteError('');
+                setIsDeleteOpen(false);
+              }
+            }}
             onConfirm={handleDelete}
             isDeleting={isDeleting}
+            error={deleteError}
           />
         </>
       )}

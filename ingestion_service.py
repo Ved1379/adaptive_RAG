@@ -1,4 +1,3 @@
-import os
 import chromadb
 from pathlib import Path
 from typing import Dict, Any, List
@@ -22,7 +21,7 @@ def ingest_document(document_id: str, file_path: str, filename: str) -> Dict[str
             return {"success": False, "page_count": 0, "chunk_count": 0, "error": f"File not found: {file_path}"}
 
         # 1. Extract pages
-        pages = extract_pages(str(path))
+        pages = extract_pages(str(path), raise_on_ocr_unavailable=True)
         if not pages:
             return {"success": False, "page_count": 0, "chunk_count": 0, "error": "No readable text extracted from document."}
 
@@ -37,10 +36,7 @@ def ingest_document(document_id: str, file_path: str, filename: str) -> Dict[str
         embeddings = generate_embeddings(texts)
 
         # 4. Remove any prior chunks for this document (ensures idempotency on retries)
-        try:
-            delete_document_from_chroma(document_id)
-        except Exception:
-            pass
+        delete_document_from_chroma(document_id)
 
         # 5. Prepare deterministic chunk IDs and metadata
         chunk_ids = [f"doc_{document_id}_chunk_{i}" for i in range(len(chunks))]
@@ -83,17 +79,19 @@ def delete_document_from_chroma(document_id: str) -> int:
     Remove all chunks belonging to a document from ChromaDB.
     Returns the count of chunks deleted.
     """
-    try:
-        # ChromaDB allows filtering by metadata
-        results = collection.get(where={"document_id": document_id})
-        ids_to_delete = results.get("ids", [])
-        if ids_to_delete:
-            collection.delete(ids=ids_to_delete)
-            return len(ids_to_delete)
-        return 0
-    except Exception as e:
-        print(f"[ChromaDB] Error deleting chunks for doc {document_id}: {e}")
-        return 0
+    # Propagate failures to callers. In particular, document deletion must not
+    # remove the APPROVED database record while its chunks remain in ChromaDB.
+    results = collection.get(where={"document_id": document_id}, include=[])
+    ids_to_delete = results.get("ids", [])
+    if ids_to_delete:
+        collection.delete(ids=ids_to_delete)
+
+    remaining = collection.get(where={"document_id": document_id}, include=[]).get("ids", [])
+    if remaining:
+        raise RuntimeError(
+            f"ChromaDB still contains {len(remaining)} chunk(s) for document {document_id}"
+        )
+    return len(ids_to_delete)
 
 
 def get_document_chunks_from_chroma(document_id: str) -> List[Dict[str, Any]]:

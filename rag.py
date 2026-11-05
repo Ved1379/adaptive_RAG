@@ -45,17 +45,21 @@ def retrieve_chunks(question: str):
     Filtered strictly to active, approved documents.
     """
     db = SessionLocal()
-    approved_filenames = set()
-    approved_doc_ids = set()
+    approved_documents = {}
     try:
         approved_docs = db.query(Document).filter(Document.status == "APPROVED").all()
         for d in approved_docs:
-            approved_filenames.add(d.filename)
-            approved_doc_ids.add(d.id)
+            if isinstance(d.id, str) and d.id.strip():
+                approved_documents[d.id] = d.filename
     except Exception as err:
         print(f"[DB Query Error] {err}")
+        return [], []
     finally:
         db.close()
+
+    # An empty approved set must never turn off filtering.
+    if not approved_documents:
+        return [], []
 
     total_chunks = collection.count()
     if total_chunks == 0:
@@ -72,27 +76,51 @@ def retrieve_chunks(question: str):
     is_broad = any(term in question_lower for term in broad_terms)
 
     retrieval_k = min(total_chunks, 25 if not is_broad else 35)
-    raw_results = collection.query(
-        query_embeddings=[question_embedding],
-        n_results=retrieval_k,
-        include=["documents", "metadatas", "distances"]
-    )
+    approved_ids = list(approved_documents)
+    try:
+        # Filter before top-k so unapproved vectors cannot consume result slots.
+        raw_results = collection.query(
+            query_embeddings=[question_embedding],
+            n_results=retrieval_k,
+            where={"document_id": {"$in": approved_ids}},
+            include=["documents", "metadatas", "distances"]
+        )
+    except Exception as filtered_query_error:
+        # Compatibility fallback for Chroma versions that do not support this
+        # metadata filter. Fetch candidates broadly, validate IDs below, then
+        # select the top-k approved vector results.
+        print(f"[ChromaDB] Approved-ID filter unavailable; safely over-fetching: {filtered_query_error}")
+        try:
+            raw_results = collection.query(
+                query_embeddings=[question_embedding],
+                n_results=total_chunks,
+                include=["documents", "metadatas", "distances"]
+            )
+        except Exception as query_error:
+            print(f"[ChromaDB] Vector retrieval failed: {query_error}")
+            raw_results = None
 
     retrieved_chunks = []
     retrieved_sources = []
     seen_snippets = set()
 
     if raw_results and raw_results.get("documents") and len(raw_results["documents"]) > 0:
-        for text, meta in zip(raw_results["documents"][0], raw_results["metadatas"][0]):
+        vector_results = []
+        metadatas = (raw_results.get("metadatas") or [[]])[0]
+        distances = (raw_results.get("distances") or [[]])[0]
+        for index, (text, meta) in enumerate(zip(raw_results["documents"][0], metadatas)):
             if not meta:
-                meta = {}
-            doc_name = meta.get("filename", "Document")
-            doc_id = meta.get("document_id")
-
-            # Verify document approval
-            if approved_filenames and doc_name not in approved_filenames and (doc_id and doc_id not in approved_doc_ids):
                 continue
+            doc_id = meta.get("document_id")
+            # document_id is authoritative; reject absent, unknown, or
+            # internally inconsistent metadata even after Chroma filtering.
+            if not isinstance(doc_id, str) or doc_id not in approved_documents:
+                continue
+            vector_results.append((text, meta, distances[index] if index < len(distances) else None))
 
+        # Filter first, then retain the desired number of approved vector hits.
+        for text, meta, _distance in vector_results[:retrieval_k]:
+            doc_name = approved_documents[meta["document_id"]]
             if text not in seen_snippets:
                 seen_snippets.add(text)
                 retrieved_chunks.append(text)
@@ -110,6 +138,7 @@ def retrieve_chunks(question: str):
     for ident in identifiers:
         try:
             keyword_results = collection.get(
+                where={"document_id": {"$in": approved_ids}},
                 where_document={"$contains": ident},
                 include=["documents", "metadatas"]
             )
@@ -117,10 +146,13 @@ def retrieve_chunks(question: str):
                 for text, meta in zip(keyword_results["documents"], keyword_results["metadatas"]):
                     if not meta:
                         meta = {}
-                    doc_name = meta.get("filename", "Document")
                     doc_id = meta.get("document_id")
-                    if approved_filenames and doc_name not in approved_filenames and (doc_id and doc_id not in approved_doc_ids):
+                    if not isinstance(doc_id, str) or doc_id not in approved_documents:
                         continue
+                    expected_filename = approved_documents[doc_id]
+                    # Report the DB filename as well; Chroma metadata cannot
+                    # rename or establish approval for a document.
+                    doc_name = expected_filename
                     if text not in seen_snippets:
                         seen_snippets.add(text)
                         retrieved_chunks.append(text)
@@ -131,7 +163,31 @@ def retrieve_chunks(question: str):
                             "text": text[:300]
                         })
         except Exception as kw_err:
-            print(f"[Keyword Retrieval] Error for '{ident}': {kw_err}")
+            # If combined metadata/text filtering is unsupported, perform the
+            # text lookup alone and apply the same strict ID checks locally.
+            try:
+                keyword_results = collection.get(
+                    where_document={"$contains": ident},
+                    include=["documents", "metadatas"]
+                )
+                for text, meta in zip(keyword_results.get("documents") or [], keyword_results.get("metadatas") or []):
+                    if not meta:
+                        continue
+                    doc_id = meta.get("document_id")
+                    if not isinstance(doc_id, str) or doc_id not in approved_documents:
+                        continue
+                    expected_filename = approved_documents[doc_id]
+                    if text not in seen_snippets:
+                        seen_snippets.add(text)
+                        retrieved_chunks.append(text)
+                        retrieved_sources.append({
+                            "document": expected_filename,
+                            "page": meta.get("page_number", 1),
+                            "chunk_index": meta.get("chunk_index", 0),
+                            "text": text[:300]
+                        })
+            except Exception as fallback_err:
+                print(f"[Keyword Retrieval] Error for '{ident}': {kw_err}; fallback failed: {fallback_err}")
 
     return retrieved_chunks, retrieved_sources
 

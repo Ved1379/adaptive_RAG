@@ -1,8 +1,8 @@
 import axios from 'axios';
-import { resolveApiBaseUrl } from './apiRouting';
+import { resolveApiBaseUrl } from './apiRouting.js';
 
 // Central API Configuration
-export const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+export const API_BASE_URL = resolveApiBaseUrl(import.meta.env?.VITE_API_BASE_URL);
 
 // Central Axios Client
 export const apiClient = axios.create({
