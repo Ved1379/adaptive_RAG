@@ -27,13 +27,16 @@ export default function Sidebar({
   chatSessions = [],
   currentSessionId,
   onSelectSession,
+  isNewChatDisabled = false,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, role, isAdmin, isStudent, isAuthenticated, logout } = useAuth();
 
-  const handleNewChatClick = () => {
-    onNewChat();
+  const handleNewChatClick = async () => {
+    if (isNewChatDisabled) return;
+    const created = await onNewChat();
+    if (!created) return;
     if (location.pathname !== '/') {
       navigate('/');
     }
@@ -152,6 +155,7 @@ export default function Sidebar({
           <button
             type="button"
             onClick={handleNewChatClick}
+            disabled={isNewChatDisabled}
             style={{
               width: '100%',
               display: 'flex',
@@ -165,7 +169,8 @@ export default function Sidebar({
               borderRadius: '8px',
               fontSize: '0.85rem',
               fontWeight: 600,
-              cursor: 'pointer',
+              cursor: isNewChatDisabled ? 'not-allowed' : 'pointer',
+              opacity: isNewChatDisabled ? 0.55 : 1,
               transition: 'background-color 0.15s ease',
             }}
           >

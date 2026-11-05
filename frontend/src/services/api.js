@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { resolveApiBaseUrl } from './apiRouting';
 
 // Central API Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+export const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 // Central Axios Client
 export const apiClient = axios.create({
@@ -15,7 +16,7 @@ export const apiClient = axios.create({
 // Request interceptor to inject JWT bearer token
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('adaptive_rag_token');
-  if (token) {
+  if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -81,9 +82,11 @@ export const registerUser = async ({ email, password, name, department }) => {
   }
 };
 
-export const getMe = async () => {
+export const getMe = async (token) => {
   try {
-    const response = await apiClient.get('/auth/me');
+    const response = await apiClient.get('/auth/me', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     return { success: true, data: response.data.user };
   } catch (error) {
     return { success: false, error: error.response?.data?.detail || 'Failed to authenticate user.' };
@@ -115,6 +118,38 @@ export const sendChatMessage = async (question) => {
       status: error.response?.status,
     };
   }
+};
+
+export const getConversations = async (signal, token) => {
+  const response = await apiClient.get('/conversations', {
+    signal,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return response.data;
+};
+
+export const createConversation = async (token) => {
+  const response = await apiClient.post('/conversations', {}, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return response.data;
+};
+
+export const deleteConversation = async (id, token) => {
+  await apiClient.delete(`/conversations/${id}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+};
+
+export const sendConversationMessage = async (question, conversationId, signal, token) => {
+  const response = await apiClient.post('/chat', {
+    question,
+    conversation_id: conversationId || null,
+  }, {
+    signal,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return { success: true, data: response.data };
 };
 
 export const sendMessage = sendChatMessage;

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { API_PROXY_PREFIX, API_PROXY_TARGET, rewriteApiProxyPath } from './src/services/apiRouting.js';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -8,34 +9,10 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-      '/chat': {
-        target: 'http://127.0.0.1:9000',
+      [API_PROXY_PREFIX]: {
+        target: API_PROXY_TARGET,
         changeOrigin: true,
-      },
-      '/health': {
-        target: 'http://127.0.0.1:9000',
-        changeOrigin: true,
-      },
-      '/documents': {
-        target: 'http://127.0.0.1:9000',
-        changeOrigin: true,
-      },
-      '/auth': {
-        target: 'http://127.0.0.1:9000',
-        changeOrigin: true,
-      },
-      '/admin': {
-        target: 'http://127.0.0.1:9000',
-        changeOrigin: true,
-      },
-      '/users': {
-        target: 'http://127.0.0.1:9000',
-        changeOrigin: true,
-      },
-      '/api': {
-        target: 'http://127.0.0.1:9000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        rewrite: rewriteApiProxyPath,
       },
     },
   },

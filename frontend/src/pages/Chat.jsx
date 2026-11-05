@@ -14,7 +14,9 @@ import ChatMessage from '../components/ChatMessage';
 import LoadingMessage from '../components/LoadingMessage';
 import MessageInput from '../components/MessageInput';
 import SuggestionCard from '../components/SuggestionCard';
-import { sendChatMessage, checkHealth } from '../services/api';
+import { sendConversationMessage, checkHealth, deleteConversation } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { beginChatTurn, finishChatTurn, isCurrentAccountResponse } from '../services/chatIsolation';
 
 const DEFAULT_SUGGESTIONS = [
   {
@@ -44,12 +46,25 @@ export default function Chat({
   currentSessionId,
   chatSessions,
   setChatSessions,
+  setCurrentSessionId,
+  isChatDisabled = false,
 }) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isBackendOnline, setIsBackendOnline] = useState(false);
   const messagesEndRef = useRef(null);
+  const activeRequestRef = useRef(null);
+  const identityRef = useRef(null);
+  const selectedSessionRef = useRef(currentSessionId);
+  const { user, token } = useAuth();
+  identityRef.current = { userId: user?.id || null, token };
+  selectedSessionRef.current = currentSessionId;
+
+  useEffect(() => {
+    activeRequestRef.current?.abort();
+    return () => activeRequestRef.current?.abort();
+  }, [user?.id, token]);
 
   // Get active session messages
   const currentSession = chatSessions.find((s) => s.id === currentSessionId) || {
@@ -82,7 +97,11 @@ export default function Chat({
 
   const handleSend = async (questionText = null) => {
     const textToSend = (questionText || input).trim();
-    if (!textToSend || isLoading) return;
+    if (!textToSend || isLoading || isChatDisabled || !user || !token) return;
+
+    const requestedUserId = user.id;
+    const requestedToken = token;
+    const sessionId = currentSessionId || `pending-${Date.now()}`;
 
     setError(null);
     const userTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -103,20 +122,25 @@ export default function Chat({
           : textToSend
         : currentSession.title;
 
-    setChatSessions((prev) =>
-      prev.map((s) =>
-        s.id === currentSessionId
-          ? { ...s, title: updatedTitle, messages: updatedMessages, updatedAt: Date.now() }
-          : s
-      )
-    );
+    setChatSessions((prev) => beginChatTurn(prev, sessionId, newUserMessage, updatedTitle).sessions);
+    // Select the optimistic session immediately so the user message renders during generation.
+    selectedSessionRef.current = sessionId;
+    setCurrentSessionId(sessionId);
 
     setInput('');
     setIsLoading(true);
 
+    const controller = new AbortController();
     try {
-      // Send question to the real FastAPI backend
-      const response = await sendChatMessage(textToSend);
+      activeRequestRef.current = controller;
+      const response = await sendConversationMessage(
+        textToSend,
+        currentSessionId,
+        controller.signal,
+        requestedToken
+      );
+      if (!isCurrentAccountResponse(requestedUserId, identityRef.current?.userId)
+        || identityRef.current?.token !== requestedToken) return;
 
       const aiTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -135,17 +159,18 @@ export default function Chat({
           timestamp: aiTimestamp,
         };
 
-        setChatSessions((prev) =>
-          prev.map((s) =>
-            s.id === currentSessionId
-              ? {
-                  ...s,
-                  messages: [...updatedMessages, newAiMessage],
-                  updatedAt: Date.now(),
-                }
-              : s
-          )
-        );
+        const savedConversationId = response.data.conversation_id;
+
+        setChatSessions((prev) => finishChatTurn(
+          prev,
+          sessionId,
+          savedConversationId,
+          [...updatedMessages, newAiMessage]
+        ));
+        if (savedConversationId && selectedSessionRef.current === sessionId) {
+          selectedSessionRef.current = savedConversationId;
+          setCurrentSessionId(savedConversationId);
+        }
       } else {
         // Display real error without falling back to fake attendance data
         const errMsg =
@@ -163,7 +188,7 @@ export default function Chat({
 
         setChatSessions((prev) =>
           prev.map((s) =>
-            s.id === currentSessionId
+            s.id === sessionId
               ? {
                   ...s,
                   messages: [...updatedMessages, errorAiMessage],
@@ -174,21 +199,38 @@ export default function Chat({
         );
       }
     } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      if (!isCurrentAccountResponse(requestedUserId, identityRef.current?.userId)
+        || identityRef.current?.token !== requestedToken) return;
       const errMsg = err.message || 'An unexpected error occurred.';
       setError(errMsg);
     } finally {
-      setIsLoading(false);
+      if (isCurrentAccountResponse(requestedUserId, identityRef.current?.userId)
+        && identityRef.current?.token === requestedToken) setIsLoading(false);
+      if (activeRequestRef.current === controller) activeRequestRef.current = null;
     }
   };
 
-  const handleClearChat = () => {
+  const handleClearChat = async () => {
     if (window.confirm('Are you sure you want to clear this conversation?')) {
-      setChatSessions((prev) =>
-        prev.map((s) =>
-          s.id === currentSessionId ? { ...s, messages: [], title: 'New Conversation' } : s
-        )
-      );
-      setError(null);
+      const requestedUserId = user?.id;
+      const deletingSessionId = currentSessionId;
+      try {
+        if (deletingSessionId && !deletingSessionId.startsWith('pending-')) {
+          await deleteConversation(deletingSessionId, token);
+        }
+        if (!isCurrentAccountResponse(requestedUserId, identityRef.current?.userId)) return;
+        setChatSessions((prev) => prev.filter((session) => session.id !== deletingSessionId));
+        if (selectedSessionRef.current === deletingSessionId) {
+          selectedSessionRef.current = null;
+          setCurrentSessionId(null);
+        }
+        setError(null);
+      } catch (err) {
+        if (isCurrentAccountResponse(requestedUserId, identityRef.current?.userId)) {
+          setError('Unable to delete this conversation. Please try again.');
+        }
+      }
     }
   };
 
@@ -378,7 +420,7 @@ export default function Chat({
         input={input}
         setInput={setInput}
         onSend={() => handleSend()}
-        isLoading={isLoading}
+        isLoading={isLoading || isChatDisabled}
         placeholder="Ask anything about your college..."
       />
     </div>

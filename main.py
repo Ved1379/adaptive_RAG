@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from database import init_db, get_db
-from models import User, Document, AuditLog, QueryEvaluation
+from models import User, Document, AuditLog, QueryEvaluation, Conversation, Message
 from auth import (
     hash_password,
     verify_password,
@@ -81,6 +81,7 @@ class UserLoginRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str
+    conversation_id: Optional[str] = None
 
 
 class RejectRequest(BaseModel):
@@ -209,7 +210,8 @@ def get_me(current_user: User = Depends(get_current_user)):
 @app.post("/chat")
 def chat(
     request: ChatRequest,
-    current_user: Optional[User] = Depends(get_optional_user)
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db)
 ):
     question = request.question.strip()
     if not question:
@@ -218,11 +220,100 @@ def chat(
             detail="Question cannot be empty."
         )
 
-    user_id = current_user.id if current_user else None
-    user_email = current_user.email if current_user else "guest@visitor.local"
+    if request.conversation_id:
+        conversation = (
+            db.query(Conversation)
+            .filter(Conversation.id == request.conversation_id, Conversation.user_id == current_user.id)
+            .first()
+        )
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+    else:
+        conversation = Conversation(user_id=current_user.id, title=question[:255] or "New Conversation")
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
 
-    result = ask_question(question, user_id=user_id, user_email=user_email)
+    db.add(Message(conversation_id=conversation.id, role="user", content=question))
+    if conversation.title == "New Conversation":
+        conversation.title = question[:255]
+    conversation.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    db.commit()
+
+    result = ask_question(question, user_id=current_user.id, user_email=current_user.email)
+    db.add(Message(conversation_id=conversation.id, role="assistant", content=result.get("answer", "")))
+    conversation.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    db.commit()
+    result["conversation_id"] = conversation.id
     return result
+
+
+def _owned_conversation(db: Session, conversation_id: str, current_user: User) -> Conversation:
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.id == conversation_id, Conversation.user_id == current_user.id)
+        .first()
+    )
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return conversation
+
+
+@app.post("/conversations", status_code=status.HTTP_201_CREATED)
+def create_conversation(
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    conversation = Conversation(user_id=current_user.id)
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    return conversation.to_dict(include_messages=True)
+
+
+@app.get("/conversations")
+def list_conversations(
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    conversations = (
+        db.query(Conversation)
+        .filter(Conversation.user_id == current_user.id)
+        .order_by(Conversation.updated_at.desc())
+        .all()
+    )
+    return [conversation.to_dict(include_messages=True) for conversation in conversations]
+
+
+@app.get("/conversations/{conversation_id}")
+def get_conversation(
+    conversation_id: str,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    return _owned_conversation(db, conversation_id, current_user).to_dict(include_messages=True)
+
+
+@app.get("/conversations/{conversation_id}/messages")
+def get_conversation_messages(
+    conversation_id: str,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    conversation = _owned_conversation(db, conversation_id, current_user)
+    return [message.to_dict() for message in conversation.messages]
+
+
+@app.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_conversation(
+    conversation_id: str,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    conversation = _owned_conversation(db, conversation_id, current_user)
+    db.delete(conversation)
+    db.commit()
+    return None
 
 
 @app.get("/chat/history")

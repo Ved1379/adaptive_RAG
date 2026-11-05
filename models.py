@@ -29,6 +29,7 @@ class User(Base):
 
     # Relationships
     documents = relationship("Document", back_populates="uploader", foreign_keys="Document.uploader_id")
+    conversations = relationship("Conversation", back_populates="owner", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -155,5 +156,55 @@ class QueryEvaluation(Base):
             "outcome": self.outcome,
             "retrieved_sources": self.retrieved_sources,
             "latency_ms": self.latency_ms,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False, default="New Conversation")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
+    owner = relationship("User", back_populates="conversations")
+    messages = relationship(
+        "Message", back_populates="conversation", cascade="all, delete-orphan",
+        order_by="Message.created_at, Message.id"
+    )
+
+    def to_dict(self, include_messages=False):
+        result = {
+            "id": self.id,
+            "title": self.title,
+            "user_id": self.user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "message_count": len(self.messages),
+        }
+        if include_messages:
+            result["messages"] = [message.to_dict() for message in self.messages]
+        return result
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id = Column(String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    conversation = relationship("Conversation", back_populates="messages")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "conversation_id": self.conversation_id,
+            "role": self.role,
+            "content": self.content,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

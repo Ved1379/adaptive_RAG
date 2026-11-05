@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -14,98 +14,148 @@ import Analytics from './pages/Analytics';
 import AccessDenied from './pages/AccessDenied';
 import Login from './pages/Login';
 import Register from './pages/Register';
-
-const STORAGE_KEY = 'adaptive_rag_sessions_v1';
+import { useAuth } from './context/AuthContext';
+import { createConversation, deleteConversation, getConversations } from './services/api';
+import {
+  activateConversation,
+  clearLegacyChatSessions,
+  isCurrentAccountResponse,
+  mapConversationHistory,
+  sessionsForAccount,
+} from './services/chatIsolation';
 
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, token, isLoading: authLoading } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [chatSessions, setChatSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [sessionOwnerId, setSessionOwnerId] = useState(null);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState(null);
+  const [isCreatingConversation, setIsCreatingConversation] = useState(false);
+  const historyRequestRef = useRef(0);
+  const createLockRef = useRef(null);
 
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
 
-  // Load chat sessions from localStorage
-  const [chatSessions, setChatSessions] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+  const activeUserId = user?.id || null;
+  const identityRef = useRef({ userId: activeUserId, token });
+  identityRef.current = { userId: activeUserId, token };
+  const visibleChatSessions = sessionsForAccount(chatSessions, sessionOwnerId, activeUserId);
+  const isChatDisabled = authLoading || isHistoryLoading || isCreatingConversation
+    || !activeUserId || !token || sessionOwnerId !== activeUserId;
+
+  // Discard the old shared browser cache. It has no reliable owner and is never imported.
+  useEffect(() => {
+    clearLegacyChatSessions();
+  }, []);
+
+  // Each identity transition clears visible state before loading that account's server history.
+  useEffect(() => {
+    setChatSessions([]);
+    setCurrentSessionId(null);
+    setSessionOwnerId(activeUserId);
+    setHistoryError(null);
+    createLockRef.current = null;
+    setIsCreatingConversation(false);
+    if (authLoading) {
+      setIsHistoryLoading(true);
+      return undefined;
+    }
+    if (!activeUserId || !token) {
+      setIsHistoryLoading(false);
+      return undefined;
+    }
+
+    setIsHistoryLoading(true);
+    const controller = new AbortController();
+    const requestedUserId = activeUserId;
+    const requestedToken = token;
+    const requestId = ++historyRequestRef.current;
+    getConversations(controller.signal, token).then((conversations) => {
+      if (controller.signal.aborted || requestId !== historyRequestRef.current
+        || !isCurrentAccountResponse(requestedUserId, identityRef.current.userId)
+        || requestedToken !== identityRef.current.token) return;
+      const sessions = mapConversationHistory(conversations);
+      setChatSessions(sessions);
+      setCurrentSessionId(sessions[0]?.id || null);
+    }).catch((error) => {
+      if (error.name !== 'CanceledError' && error.name !== 'AbortError') {
+        console.error('[Chat] Could not load conversations:', error);
+        if (requestId === historyRequestRef.current
+          && isCurrentAccountResponse(requestedUserId, identityRef.current.userId)
+          && requestedToken === identityRef.current.token) {
+          setHistoryError('Could not load your conversations. Retry by refreshing the page.');
         }
       }
-    } catch (e) {
-      console.warn('Could not read chat sessions from localStorage:', e);
-    }
-    const initialId = `session-${Date.now()}`;
-    return [
-      {
-        id: initialId,
-        title: 'New Conversation',
-        messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-    ];
-  });
-
-  const [currentSessionId, setCurrentSessionId] = useState(() => {
-    return chatSessions[0]?.id || `session-${Date.now()}`;
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(chatSessions));
-    } catch (e) {
-      console.warn('Could not save sessions to localStorage:', e);
-    }
-  }, [chatSessions]);
-
-  const handleNewChat = () => {
-    const newId = `session-${Date.now()}`;
-    const newSession = {
-      id: newId,
-      title: 'New Conversation',
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+    }).finally(() => {
+      if (requestId === historyRequestRef.current
+        && isCurrentAccountResponse(requestedUserId, identityRef.current.userId)
+        && requestedToken === identityRef.current.token) setIsHistoryLoading(false);
+    });
+    return () => {
+      controller.abort();
+      if (requestId === historyRequestRef.current) historyRequestRef.current += 1;
     };
-    setChatSessions((prev) => [newSession, ...prev]);
-    setCurrentSessionId(newId);
+  }, [activeUserId, token, authLoading]);
+
+  const handleNewChat = async () => {
+    if (!user || !token || isChatDisabled || createLockRef.current) return false;
+    const requestedUserId = user.id;
+    const requestedToken = token;
+    const requestLock = {};
+    createLockRef.current = requestLock;
+    setIsCreatingConversation(true);
+    setCurrentSessionId(null);
+    try {
+      const conversation = await createConversation(token);
+      if (!isCurrentAccountResponse(requestedUserId, identityRef.current.userId)
+        || requestedToken !== identityRef.current.token) return false;
+      const activated = activateConversation(visibleChatSessions, conversation);
+      setSessionOwnerId(requestedUserId);
+      setChatSessions(activated.sessions);
+      setCurrentSessionId(activated.activeConversationId);
+      setHistoryError(null);
+      return true;
+    } catch (error) {
+      console.error('[Chat] Could not create conversation:', error);
+      return false;
+    } finally {
+      if (createLockRef.current === requestLock) {
+        createLockRef.current = null;
+        if (isCurrentAccountResponse(requestedUserId, identityRef.current.userId)
+          && requestedToken === identityRef.current.token) setIsCreatingConversation(false);
+      }
+    }
   };
 
   const handleSelectSession = (id) => {
     setCurrentSessionId(id);
   };
 
-  const handleClearAllHistory = () => {
-    const newId = `session-${Date.now()}`;
-    const freshSession = {
-      id: newId,
-      title: 'New Conversation',
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    setChatSessions([freshSession]);
-    setCurrentSessionId(newId);
+  const handleClearAllHistory = async () => {
+    if (!user || !token) return false;
+    const requestedUserId = user.id;
+    const toDelete = visibleChatSessions.map((session) => session.id);
+    try {
+      await Promise.all(toDelete.map((id) => deleteConversation(id, token)));
+      if (!isCurrentAccountResponse(requestedUserId, identityRef.current.userId)
+        || token !== identityRef.current.token) return false;
+      setChatSessions([]);
+      setCurrentSessionId(null);
+      return true;
+    } catch (error) {
+      console.error('[Chat] Could not delete all conversations:', error);
+      return false;
+    }
   };
 
   const handleAskDocument = (question) => {
-    const active = chatSessions.find((s) => s.id === currentSessionId);
-    let targetId = currentSessionId;
+    const active = visibleChatSessions.find((s) => s.id === currentSessionId);
     if (active && active.messages.length > 0) {
-      const newId = `session-${Date.now()}`;
-      const newSession = {
-        id: newId,
-        title: question.length > 28 ? `${question.slice(0, 28)}...` : question,
-        messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      setChatSessions((prev) => [newSession, ...prev]);
-      targetId = newId;
-      setCurrentSessionId(newId);
+      handleNewChat();
     }
     navigate('/');
   };
@@ -127,24 +177,34 @@ export default function App() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onNewChat={handleNewChat}
-        chatSessions={chatSessions}
+        chatSessions={visibleChatSessions}
         currentSessionId={currentSessionId}
         onSelectSession={handleSelectSession}
+        isNewChatDisabled={isChatDisabled}
       />
 
       {/* Main App Content View */}
       <main className="main-content">
+        {historyError && (
+          <div role="alert" style={{ padding: '8px 16px', color: '#f87171', backgroundColor: '#1f1418' }}>
+            {historyError}
+          </div>
+        )}
         <Routes>
           {/* Public / Student & Admin Shared Routes */}
           <Route
             path="/"
             element={
-              <Chat
-                onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-                currentSessionId={currentSessionId}
-                chatSessions={chatSessions}
-                setChatSessions={setChatSessions}
-              />
+              <ProtectedRoute adminOnly={false}>
+                <Chat
+                  onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+                  currentSessionId={currentSessionId}
+                  chatSessions={visibleChatSessions}
+                  setChatSessions={setChatSessions}
+                  setCurrentSessionId={setCurrentSessionId}
+                  isChatDisabled={isChatDisabled}
+                />
+              </ProtectedRoute>
             }
           />
           <Route
@@ -166,7 +226,7 @@ export default function App() {
               <Settings
                 onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                 onClearAllHistory={handleClearAllHistory}
-                sessionCount={chatSessions.length}
+                sessionCount={visibleChatSessions.length}
               />
             }
           />

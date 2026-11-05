@@ -19,6 +19,7 @@ export default function Settings({ onToggleSidebar, onClearAllHistory, sessionCo
   const { role, user, setRole, isAdmin } = useAuth();
   const [healthStatus, setHealthStatus] = useState({ checking: true, isOnline: false });
   const [showClearSuccess, setShowClearSuccess] = useState(false);
+  const [showClearError, setShowClearError] = useState(false);
 
   const testConnection = async () => {
     setHealthStatus({ checking: true, isOnline: false });
@@ -30,11 +31,13 @@ export default function Settings({ onToggleSidebar, onClearAllHistory, sessionCo
     testConnection();
   }, []);
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     if (window.confirm('Are you sure you want to delete all saved conversations and chat history?')) {
-      onClearAllHistory();
-      setShowClearSuccess(true);
-      setTimeout(() => setShowClearSuccess(false), 3000);
+      setShowClearError(false);
+      const cleared = await onClearAllHistory();
+      setShowClearSuccess(Boolean(cleared));
+      setShowClearError(!cleared);
+      if (cleared) setTimeout(() => setShowClearSuccess(false), 3000);
     }
   };
 
@@ -344,6 +347,11 @@ export default function Settings({ onToggleSidebar, onClearAllHistory, sessionCo
                 <span>All chat history cleared successfully.</span>
               </div>
             )}
+            {showClearError && (
+              <div role="alert" style={{ marginTop: '10px', color: '#f87171', fontSize: '0.75rem' }}>
+                Could not delete all conversations. Please try again.
+              </div>
+            )}
           </div>
 
           {/* Section 3: API & FastAPI Backend Architecture */}
@@ -413,7 +421,7 @@ export default function Settings({ onToggleSidebar, onClearAllHistory, sessionCo
                     FastAPI Server Target
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
-                    http://127.0.0.1:8000 (Vite Proxy: /chat, /health)
+                    http://127.0.0.1:9000 (Vite Proxy: /api/*)
                   </div>
                 </div>
 
